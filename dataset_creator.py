@@ -6,6 +6,8 @@ import numpy as np
 import csv
 import uuid
 
+import argparse
+import sys
 
 
 def hide_children(obj, hide_status):
@@ -14,7 +16,11 @@ def hide_children(obj, hide_status):
     for child in obj.children:
         hide_children(child, hide_status)
 
-def create_synthetic_images(output_folder, num_images, csv_filename):
+def create_synthetic_images(output_folder, num_images, csv_filename, engine):
+
+    # Set the Engine for rendering
+    bpy.context.scene.render.engine = engine
+
     
     # Set the desired resolution
     bpy.context.scene.render.resolution_x = 512
@@ -25,6 +31,7 @@ def create_synthetic_images(output_folder, num_images, csv_filename):
     
     # Filter out child objects and exclude Camera and Light
     pieces = [obj for obj in bpy.data.objects if obj.parent is None and obj.type == 'MESH' and obj.name not in ['Camera', 'Light']]
+
     for piece in pieces:
         hide_children(piece, True)  # hide all pieces initially for rendering
     
@@ -124,10 +131,26 @@ def create_synthetic_images(output_folder, num_images, csv_filename):
             hide_children(piece, True)  # hide the piece again after rendering
 
 
-# To call the function:
-create_synthetic_images("/Users/jordivallverdu/Documents/360code/apps/lego_sorter/dataset/", 5)
+if __name__ == "__main__":
+
+    # Filter out Blender's default arguments
+
+    # Check if '--' is in sys.argv, if not, then set argv to an empty list
+    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+
+
+    parser = argparse.ArgumentParser(description="Generate synthetic images in Blender.")
+    parser.add_argument("--output_folder",    type=str, default="./dataset/", help="Path to the folder where images will be saved.")
+    parser.add_argument("--num_images",       type=int, default=5, help="Number of synthetic images to generate.")
+    parser.add_argument("--csv_filename",     type=str, default="./dataset.csv", help="Path to the CSV file to store metadata.")
+    parser.add_argument("--engine",           type=str, default="BLENDER_EEVEE", choices=["CYCLES", "BLENDER_EEVEE"], help="Blender rendering engine to use.")
+
+    args = parser.parse_args(argv)
+
+    create_synthetic_images(args.output_folder, args.num_images, args.csv_filename, args.engine)
+
 
 '''
 To execute from terminal
-blender -b lego_bricks_base.blend -P dataset_creator.py
+/Applications/Blender.app/Contents/MacOS/Blender -b lego_bricks_base.blend -P dataset_creator.py -- --output-folder /path/to/output/folder --num-images 1000 --csv-filename /path/to/output/folder/data.csv --engine CYCLES
 '''
