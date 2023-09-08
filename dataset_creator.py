@@ -16,6 +16,79 @@ def hide_children(obj, hide_status):
     for child in obj.children:
         hide_children(child, hide_status)
 
+def ensure_piece_has_mass(piece):
+    """
+    Ensure that the given piece and its children (sub-pieces) have a non-zero mass.
+    """
+    # Check the main piece
+    if not piece.rigid_body:
+        bpy.ops.rigidbody.object_add({'object': piece})
+        piece.rigid_body.mass = 0.1
+    elif piece.rigid_body.mass == 0:
+        piece.rigid_body.mass = 0.1
+        
+    # Check all its children (sub-pieces)
+    for child in piece.children:
+        if not child.rigid_body:
+            bpy.ops.rigidbody.object_add({'object': child})
+            child.rigid_body.mass = 0.1
+        elif child.rigid_body.mass == 0:
+            child.rigid_body.mass = 0.1
+
+
+
+def apply_gravity_to_piece(piece):
+    """
+    Apply gravity to the LEGO piece and let it settle on the ground plane.
+    Returns the final rotation of the piece after settling.
+    """
+    # Ensure there's a ground plane (a large flat mesh) named 'Ground' in your Blender file
+
+    ensure_piece_has_mass(piece)
+    
+    ground = bpy.data.objects.get('Ground')
+    if not ground:
+        # If not, you can create one
+        # Create a plane for the piece to fall onto and enable rigid body physics for the plane:
+        bpy.ops.mesh.primitive_plane_add(size=10,  location=(0, 0, -0.05))
+        ground = bpy.context.object
+        ground.name = 'Ground'
+    
+
+
+    # Set the ground as a passive rigid body so pieces can collide with it
+    ground.select_set(True)
+    bpy.ops.rigidbody.object_add(type='PASSIVE')
+    
+    # Set the piece as an active rigid body
+    piece.select_set(True)
+    bpy.ops.rigidbody.object_add(type='ACTIVE')
+    
+    bpy.context.scene.frame_end = 250  # or another appropriate value
+    
+    # Run the physics simulation
+    bpy.ops.ptcache.bake_all(bake=True)
+    
+    # Capture the final rotation
+    final_rotation = piece.rotation_euler.copy()
+    
+    # Apply the transformation after simulation
+    bpy.ops.object.visual_transform_apply()
+    
+    # Remove rigid body physics from the piece so it won't be affected in further simulations
+    # bpy.ops.rigidbody.object_remove()
+    
+    # # Reset the piece's location to (0,0,0)
+    # piece.location = (0, 0, 0)
+    
+    # # Return the piece to original layer and deselect
+    # piece.select_set(False)
+    
+    # Clean up
+    bpy.data.objects.remove(ground)
+
+    return final_rotation
+
 def create_synthetic_images(output_folder, num_images, csv_filename, engine):
 
     # Set the Engine for rendering
@@ -56,7 +129,7 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine):
             
             # Randomly rotate the piece
             piece.rotation_euler = (random.uniform(0,6.28), random.uniform(0,6.28), random.uniform(0,6.28))
-
+            print('initial rotation x: ',piece.rotation_euler.x,' y: ', piece.rotation_euler.y, ' z: ',piece.rotation_euler.z)
             
             '''
             # Realistic Rotations using Physics:
@@ -82,7 +155,9 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine):
             bpy.data.objects.remove(plane)
             '''
         
-
+            # final_rotation =  apply_gravity_to_piece(piece)
+            # piece.rotation_euler = apply_gravity_to_piece(piece)
+            # print('final_rotation x: ',piece.rotation_euler.x,' y: ', piece.rotation_euler.y, ' z: ',piece.rotation_euler.z)
             
             # Adjust light values 
             light = bpy.data.objects['Light']  # Assuming the light source is named 'Light'
@@ -152,5 +227,5 @@ if __name__ == "__main__":
 
 '''
 To execute from terminal
-/Applications/Blender.app/Contents/MacOS/Blender -b lego_bricks_base.blend -P dataset_creator.py -- --output-folder /path/to/output/folder --num-images 1000 --csv-filename /path/to/output/folder/data.csv --engine CYCLES
+/Applications/Blender.app/Contents/MacOS/Blender -b lego_bricks_base1.blend -P dataset_creator.py -- --output-folder /path/to/output/folder --num-images 1000 --csv-filename /path/to/output/folder/data.csv --engine CYCLES
 '''
