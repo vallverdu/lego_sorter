@@ -131,29 +131,6 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine):
             piece.rotation_euler = (random.uniform(0,6.28), random.uniform(0,6.28), random.uniform(0,6.28))
             print('initial rotation x: ',piece.rotation_euler.x,' y: ', piece.rotation_euler.y, ' z: ',piece.rotation_euler.z)
             
-            '''
-            # Realistic Rotations using Physics:
-            piece.rigid_body_type = 'ACTIVE' 
-            
-            # Create a plane for the piece to fall onto and enable rigid body physics for the plane:
-            bpy.ops.mesh.primitive_plane_add(size=10, location=(0, 0, -0.1))
-            plane = bpy.context.active_object
-            
-            plane.rigid_body_type = 'PASSIVE'  
-            
-            
-            # Run the physics simulation for a short period
-            bpy.context.scene.frame_set(0)
-            bpy.ops.screen.animation_play()
-            bpy.context.scene.frame_set(10)
-            bpy.ops.screen.animation_play()
-            
-            # Capture the rotation of the piece after it has fallen
-            final_rotation = piece.rotation_euler.copy()
-            
-            # Clean up
-            bpy.data.objects.remove(plane)
-            '''
         
             # final_rotation =  apply_gravity_to_piece(piece)
             # piece.rotation_euler = apply_gravity_to_piece(piece)
@@ -216,7 +193,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Generate synthetic images in Blender.")
     parser.add_argument("--output_folder",    type=str, default="./dataset/", help="Path to the folder where images will be saved.")
-    parser.add_argument("--num_images",       type=int, default=5, help="Number of synthetic images to generate.")
+    parser.add_argument("--num_images",       type=int, default=4000, help="Number of synthetic images to generate.")
     parser.add_argument("--csv_filename",     type=str, default="./dataset.csv", help="Path to the CSV file to store metadata.")
     parser.add_argument("--engine",           type=str, default="BLENDER_EEVEE", choices=["CYCLES", "BLENDER_EEVEE"], help="Blender rendering engine to use.")
 
