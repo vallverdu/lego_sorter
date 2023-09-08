@@ -16,6 +16,19 @@ def hide_children(obj, hide_status):
     for child in obj.children:
         hide_children(child, hide_status)
 
+
+def generate_random_rotation():
+    # Z-axis rotation: any value between 0 and 360 degrees
+    rot_z = random.uniform(0, 360)
+
+    # X and Y rotations: 0, 90, 180, or 270 degrees
+    possible_rotations = [0, 90, 180, 270]
+    rot_x = random.choice(possible_rotations)
+    rot_y = random.choice(possible_rotations)
+
+    return rot_x, rot_y, rot_z
+
+
 def ensure_piece_has_mass(piece):
     """
     Ensure that the given piece and its children (sub-pieces) have a non-zero mass.
@@ -96,8 +109,8 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine):
 
     
     # Set the desired resolution
-    bpy.context.scene.render.resolution_x = 512
-    bpy.context.scene.render.resolution_y = 512
+    bpy.context.scene.render.resolution_x = 128
+    bpy.context.scene.render.resolution_y = 128
     
     # Adjust camera's clip start for small objects
     bpy.data.cameras['Camera'].clip_start = 0.001
@@ -128,8 +141,10 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine):
             piece.location = (0, 0, 0)
             
             # Randomly rotate the piece
-            piece.rotation_euler = (random.uniform(0,6.28), random.uniform(0,6.28), random.uniform(0,6.28))
-            print('initial rotation x: ',piece.rotation_euler.x,' y: ', piece.rotation_euler.y, ' z: ',piece.rotation_euler.z)
+            # piece.rotation_euler = (random.uniform(0,6.28), random.uniform(0,6.28), random.uniform(0,6.28))
+            rot_x, rot_y, rot_z = generate_random_rotation()
+            piece.rotation_euler = (rot_x, rot_y, rot_z)
+            # print('initial rotation x: ',piece.rotation_euler.x,' y: ', piece.rotation_euler.y, ' z: ',piece.rotation_euler.z)
             
         
             # final_rotation =  apply_gravity_to_piece(piece)
@@ -193,7 +208,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Generate synthetic images in Blender.")
     parser.add_argument("--output_folder",    type=str, default="./dataset/", help="Path to the folder where images will be saved.")
-    parser.add_argument("--num_images",       type=int, default=4000, help="Number of synthetic images to generate.")
+    parser.add_argument("--num_images",       type=int, default=5000, help="Number of synthetic images to generate.")
     parser.add_argument("--csv_filename",     type=str, default="./dataset.csv", help="Path to the CSV file to store metadata.")
     parser.add_argument("--engine",           type=str, default="BLENDER_EEVEE", choices=["CYCLES", "BLENDER_EEVEE"], help="Blender rendering engine to use.")
 
