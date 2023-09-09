@@ -29,8 +29,8 @@ import matplotlib.pyplot as plt
 # Configuration
 class Config:
     OUTPUT = 'results'
-    DATASET_PATH = './dataset'
-    LABELS_PATH = 'dataset.csv'
+    DATASET_PATH = './data'
+    LABELS_PATH = 'data.csv'
     IMAGES_PATH = 'images'
     IMAGE_RESIZE = 128
     AUGMENTATION_FACTOR = 5
@@ -204,9 +204,9 @@ def train(model, data_loader, optimizer, device):
     ) in enumerate(pbar, 0):
         
         image = image.to(device)
-        brick_types = brick_type.to(device)
-        rotations = torch.stack((rotation_x, rotation_y, rotation_z), dim=1).to(device)
-        colors = torch.stack((color_r, color_g, color_b), dim=1).to(device)
+        brick_type = brick_type.to(device)
+        rotation = torch.stack((rotation_x, rotation_y, rotation_z), dim=1).to(device)
+        color = torch.stack((color_r, color_g, color_b), dim=1).to(device)
         
         # Optimizer zero
         optimizer.zero_grad()
@@ -215,9 +215,9 @@ def train(model, data_loader, optimizer, device):
         out_brick_type, out_rotation, out_color = model(image)
         
         # Calculate loss
-        loss_brick = criterion_brick_type(out_brick_type, brick_types)
-        loss_rotation = criterion_values(out_rotation, rotations)
-        loss_color = criterion_values(out_color, colors)
+        loss_brick = criterion_brick_type(out_brick_type, brick_type)
+        loss_rotation = criterion_values(out_rotation, rotation)
+        loss_color = criterion_values(out_color, color)
         loss = 1 * loss_brick + 1 * loss_rotation + 1 * loss_color # we could penalize more each parameter
         
         pbar.set_description(f"TRAIN loss={float(loss)} | loss_brick={float(loss_brick)} | loss_rotation={float(loss_rotation)} | loss_color={float(loss_color)}")
@@ -241,30 +241,88 @@ def train(model, data_loader, optimizer, device):
 
     return avg_loss, loss_brick_type, loss_rotation, loss_color
 
-def validate(model, data_loader, criterion, device):
+def test(model, data_loader, device):
+
+    data_loader.dataset.dataset.do_aug = False
+    data_loader.dataset.dataset.augmentation_factor = 1
+
     model.eval()
-    total_loss = 0.0
+
+    test_loss_brick_type = 0.0
+    test_loss_rotation = 0.0
+    test_loss_color = 0.0
+    test_loss = 0.0
     
+    # Initialize accumulators
+    total_type_correct = 0
+    total_rotation_mae = np.zeros(3)
+    total_rotation_mse = np.zeros(3)
+    total_color_mae = np.zeros(3)
+    total_color_mse = np.zeros(3)
+
+    pbar = tqdm(data_loader)
+
     with torch.no_grad():
-        for images, brick_types, rotation_x, rotation_y, rotation_z, color_r, color_g, color_b in data_loader:
-            images = images.to(device)
-            brick_types = brick_types.to(device)
-            rotations = torch.stack((rotation_x, rotation_y, rotation_z), dim=1).to(device)
-            colors = torch.stack((color_r, color_g, color_b), dim=1).to(device)
+
+        for batch_idx, (
+            image,
+            brick_type,
+            rotation_x,
+            rotation_y,
+            rotation_z,
+            color_r,
+            color_g,
+            color_b
+
+        ) in enumerate(pbar, 0):
             
+            image = image.to(device)
+            brick_type = brick_type.to(device)
+            rotation = torch.stack((rotation_x, rotation_y, rotation_z), dim=1).to(device)
+            color = torch.stack((color_r, color_g, color_b), dim=1).to(device)
+       
             # Forward pass
-            out_brick_type, out_rotation, out_color = model(images)
-            
+            out_brick_type, out_rotation, out_color = model(image)
+
             # Calculate loss
-            loss_brick = criterion_brick_type(out_brick_type, brick_types)
-            loss2 = criterion_values(out_rotation, rotations)
-            loss3 = criterion_values(out_color, colors)
-            loss = loss1 + loss2 + loss3
-            
-            total_loss += loss.item()
-    
-    avg_loss = total_loss / len(data_loader)
-    return avg_loss
+            loss_brick = criterion_brick_type(out_brick_type, brick_type)
+            loss_rotation = criterion_values(out_rotation, rotation)
+            loss_color = criterion_values(out_color, color)
+            loss = 1 * loss_brick + 1 * loss_rotation + 1 * loss_color
+
+            pbar.set_description(f"TEST loss={float(loss)} | loss_brick={float(loss_brick)} | loss_rotation={float(loss_rotation)} | loss_color={float(loss_color)}")
+
+            test_loss_brick += loss_brick.item()
+            test_loss_rotation += loss_rotation.item()
+            test_loss_color += loss_color.item()
+            test_loss += loss.item()
+
+            # total_type_correct
+            # total_rotation_mae
+            # total_rotation_mse
+            # total_color_mae
+            # total_color_mse
+
+            # Gender accuracy
+            type_correct = (torch.argmax(out_brick_type, dim=1) == brick_type).float().sum()
+            total_type_correct += type_correct
+
+            # # Age metrics
+            # age_diff = np.array(true_age) - np.array(pred_age)
+            # total_age_mae += np.sum(np.abs(age_diff))
+            # total_age_mse += np.sum(age_diff**2)
+
+            # # Eye position metrics
+            # eye_position_diff = np.array(true_eye) - np.array(pred_eye)
+            # total_eye_position_mae += np.sum(np.abs(eye_position_diff), axis=0)
+            # total_eye_position_mse += np.sum(eye_position_diff**2, axis=0)
+
+    loss_brick = test_loss_brick / len(data_loader)
+    loss_rotation = test_loss_rotation / len(data_loader)
+    loss_color = test_loss_color / len(data_loader)
+    avg_loss = test_loss / len(data_loader)
+
+    return avg_loss, loss_brick, loss_rotation, loss_color, type_correct
 
 def criterion_values(pred, true):
     return F.mse_loss(torch.sigmoid(pred), true)
@@ -273,15 +331,105 @@ criterion_brick_type = nn.CrossEntropyLoss()
 
 # Main Execution
 if __name__ == "__main__":
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    parser = argparse.ArgumentParser(description='Train algorithm')
+    parser.add_argument('-e', '--experiment', type=str, help='Name of the experiment', required=True)
+    parser.add_argument('-d', '--device', type=str, help='Device for the training', default=0)
+    parser.add_argument('-s', '--seed', type=int, help='Seed for the training', default=108)
+    args = parser.parse_args()
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+
+    # define Device
+    device = torch.device(f"cuda:{args.device}" if torch.cuda.is_available() else "cpu")
     
-    # Load data, create DataLoader
-    # Initialize model, criterion, optimizer
-    # Training loop with TensorBoard logging
-    
+
+    # Create project folder and names
+    OUTPUT_FOLDER = os.path.join(Config.OUTPUT, args.experiment, datetime.datetime.now().strftime("%d_%m_%Y__%H_%M_%S"))
+    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+    print('OUTPUT_FOLDER',OUTPUT_FOLDER)
+
+    os.makedirs(Config.SUMMARY_PATH, exist_ok=True)
+    os.makedirs(Config.DEBUG_PATH, exist_ok=True)
+
+    CHECKPOINTS_FOLDER = os.path.join(OUTPUT_FOLDER, 'checkpoints')
+    os.makedirs(CHECKPOINTS_FOLDER, exist_ok=True)
+
+    # Define the data transformations
+    data_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+
+    # Define the dataset and data loader
+    lego_dataset = LegoDataset('data.csv', './data', transform=data_transform)
+    train_size = int(Config.TRAIN_SPLIT * len(facelego_dataset_dataset))
+    test_size = len(lego_dataset) - train_size
+    print('train_size',train_size)
+    print('test_size',test_size)
+    train_dataset, test_dataset = torch.utils.data.random_split(lego_dataset, [train_size, test_size])
+
+    train_loader = DataLoader(train_dataset, batch_size=Config.BATCH_SIZE, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=Config.BATCH_SIZE, shuffle=False)
+
+    # Initialize the model and define the loss function and optimizer
+    model = LegoModel(inference=False)
+
+    optimizer = optim.Adam(model.parameters(), lr=Config.LR, eps = Config.EPS)
+
+    model.to(device)
+
+    # Epochs
+    best_val_loss = float('inf')
+    best_epoch = 0
+    best_model = None
+    best_type_accuracy = None
+    best_rotation_mae = None
+    best_rotation_rmse = None
+    best_color_mae = None
+    best_color_rmse = None
+
+    # Initialize accumulators
+    train_losses = []
+    train_losses_type = []
+    train_losses_rotation = []
+    train_losses_color = []
+
+    val_losses = []
+    val_losses_type = []
+    val_losses_rotation = []
+    val_losses_color = []
+
+    epochs_type_accuracy  = []
+    epochs_rotation_mae  = []
+    epochs_rotation_rmse  = []
+    epochs_color_mae  = []
+    epochs_color_rmse  = []
+
     writer = SummaryWriter()
 
-    # Placeholder for the above steps...
+    # Train the model
+    for epoch in range(Config.EPOCHS):
+        (
+            train_loss, 
+            train_loss_brick_type, 
+            train_loss_rotation, 
+            train_loss_color 
+        ) = train(model, train_loader, optimizer, device, epoch)
+        
+        (
+            val_loss, 
+            val_loss_age, 
+            val_loss_gender, 
+            val_loss_eye, 
+            total_gender_correct, 
+            total_age_mae, 
+            total_age_mse, 
+            total_eye_position_mae, 
+            total_eye_position_mse
+        ) = test(model, test_loader, device, epoch)
+        
 
     writer.close()
 
