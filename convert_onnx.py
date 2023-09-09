@@ -13,18 +13,18 @@ from onnxruntime.quantization import quantize_dynamic, QuantType
 
 # Define input and output names
 input_names = ['input']
-output_names = ['age_output', 'gender_output',  'pos_output']
+output_names = ['brick_type', 'rotation',  'color']
 
 # Define the model architecture
-class FaceModel(nn.Module):
-    
-    def __init__(self, inference = True):
-        super(FaceModel, self).__init__()
+class LegoModel(nn.Module):
+    def __init__(self, num_brick_types = 11, inference = True):
+        super(LegoModel, self).__init__()
 
         self.inference = inference
 
         # Load ResNet18 pre-trained on ImageNet
         model = models.resnet18(pretrained=True)
+
         self.backbone = nn.Sequential(
             model.conv1, 
             model.bn1, 
@@ -36,32 +36,37 @@ class FaceModel(nn.Module):
             model.layer4
         )
         
-        # print('resnet18 architecture',self.backbone)
+        # Modify the final layer to handle multiple outputs
         num_features = model.fc.in_features
-
-
-        # Add new fully connected layers for gender, age and eye position
-        self.fc_gender = nn.Linear(num_features, 2)
-        self.fc_age = nn.Linear(num_features, 1)
-        self.fc_eye = nn.Linear(num_features, 4)
-
         
-    def forward(self, x):
+        # Freeze backbone
+        # optional for speed or few-shot-learning
+        if Config.FREEZE_BACKBONE :
+            for param in self.backbone.parameters() :
+                param.requires_grad = False
+        
+        # Define the new final layers for our multi-output prediction
+        self.fc_brick_type = nn.Linear(num_features, num_brick_types)
+        self.fc_rotation = nn.Linear(num_features, 3)
+        self.fc_color = nn.Linear(num_features, 3)
 
+
+    def forward(self, x):
         x = self.backbone(x)
         x = x.mean(dim=(2, 3))
 
-        age = self.fc_age(x)
-        gender = self.fc_gender(x)
-        eye = self.fc_eye(x)
+        brick_type = self.fc_brick_type(x)
+        rotation = self.fc_rotation(x)
+        color = self.fc_color(x)
 
         if self.inference:
-            age = torch.sigmoid(age)
-            gender = torch.softmax(gender, dim=1)
-            eye = torch.sigmoid(eye)
-       
-        return age, gender, eye
-    
+            brick_type = torch.softmax(brick_type, dim=1)
+            rotation = torch.sigmoid(rotation)
+            color = torch.sigmoid(color)
+
+        return brick_type, rotation, color
+
+ 
     
 def quantize_onnx_model(onnx_model_path, quantized_model_path):
     onnx_opt_model = onnx.load(onnx_model_path)
@@ -78,7 +83,7 @@ if __name__ == '__main__':
     device = torch.device('cpu')
 
     # Initialize the model
-    model = FaceModel()
+    model = LegoModel()
     # modelPath = './ckpt/ckpt_15_2.7193858101963997.pth'
     modelPath = './ckpt/best_16_0.2764944826439023.pth'
 
@@ -88,8 +93,8 @@ if __name__ == '__main__':
     # set the model to inference mode
     model.eval().to(device)
 
-    path = "./data/images/0.jpg"
-    rgb = np.array(Image.open(path).resize((224, 224), Image.BICUBIC))[..., :3]
+    path = "./data/images/brick_0a0da5e6.png"
+    rgb = np.array(Image.open(path).resize((128, 128), Image.BICUBIC))[..., :3]
 
     x = torch.from_numpy(rgb).permute(2,0,1)[None].float() / 255.
 

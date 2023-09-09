@@ -1,5 +1,6 @@
 /blender/*
 /data/*
 /results/*
+/ckpt/*
 *.zip
 *.pth
