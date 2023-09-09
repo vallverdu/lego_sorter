@@ -18,7 +18,7 @@ import torchvision.models as models
 from torch.utils.data import Dataset, DataLoader
 from torch.nn import functional as F
 
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 
 import imgaug.augmenters as iaa
 import imgaug as ia
@@ -177,7 +177,7 @@ class LegoModel(nn.Module):
 
 # Training and Evaluation Functions
 
-def train(model, data_loader, optimizer, device):
+def train(model, data_loader, optimizer, device, epoch):
 
     data_loader.dataset.dataset.do_aug = True
     data_loader.dataset.dataset.augmentation_factor = Config.AUGMENTATION_FACTOR
@@ -407,7 +407,7 @@ if __name__ == "__main__":
     epochs_color_mae  = []
     epochs_color_rmse  = []
 
-    writer = SummaryWriter()
+    # writer = SummaryWriter()
 
     # Train the model
     for epoch in range(Config.EPOCHS):
@@ -420,16 +420,94 @@ if __name__ == "__main__":
         
         (
             val_loss, 
-            val_loss_age, 
-            val_loss_gender, 
-            val_loss_eye, 
-            total_gender_correct, 
-            total_age_mae, 
-            total_age_mse, 
-            total_eye_position_mae, 
-            total_eye_position_mse
+            val_loss_brick, 
+            val_loss_rotation, 
+            val_loss_color, 
+            total_type_correct
         ) = test(model, test_loader, device, epoch)
-        
 
-    writer.close()
+        train_losses.append(train_loss)
+        train_losses_type.append(train_loss_brick_type)
+        train_losses_rotation.append(train_loss_rotation)
+        train_losses_color.append(train_loss_color)
+
+        val_losses.append(val_loss)
+        val_losses_type.append(val_loss_brick)
+        val_losses_rotation.append(val_loss_rotation)
+        val_losses_color.append(val_loss_color)
+        
+        # Compute average metrics for the epoch
+        epoch_type_accuracy = total_type_correct / len(lego_dataset) * 100
+
+
+        if epoch > 0 and epoch % Config.CKPT_SAVE_INTERVAL == 0 :
+            print(f"Saved checkpoint {epoch}\n")
+            model_path_solve = os.path.join(CHECKPOINTS_FOLDER, f"ckpt_{epoch}_{val_loss}.pth")
+            optimizer_path_solve = os.path.join(CHECKPOINTS_FOLDER, model_path_solve.replace('ckpt_', 'optim_'))
+            torch.save(model.state_dict(), model_path_solve)
+            torch.save(optimizer.state_dict(), optimizer_path_solve)
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_epoch = epoch
+            best_model = model.state_dict()
+            best_gender_accuracy = epoch_type_accuracy
+            
+        # Print progress
+        print(f"Epoch {epoch + 1}/{Config.EPOCHS}\n"
+            
+            f"Train Loss (Brick_type): {train_loss_brick_type:.4f}, "
+            f"Train Loss (Rotation): {train_loss_rotation:.4f}, "
+            f"Train Loss (Color): {train_loss_color:.4f}\n "
+
+            f"Validation Loss (Brick_type): {val_loss_brick:.4f}, "
+            f"Validation Loss (Rotation): {val_loss_rotation:.4f},"
+            f"Validation Loss (Color): {val_loss_color:.4f}\n"
+
+            f"Type accuracy: {epoch_type_accuracy:.2f}%\n"
+        )
+    
+    # Save the best model
+    torch.save(best_model, "best_{}_{}.pth".format(best_epoch, best_val_loss))
+
+    # Plot the learning curves
+    epochs = range(1, Config.EPOCHS + 1)
+
+    plt.figure(figsize=(20, 5))
+
+    plt.subplot(1, 4, 1)
+    plt.plot(epochs, train_losses_type, label="Training")
+    plt.plot(epochs, val_losses_type, label="Validation")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Type Output Learning Curve")
+    plt.legend()
+
+    plt.subplot(1, 4, 2)
+    plt.plot(epochs, train_losses_rotation, label="Training")
+    plt.plot(epochs, val_losses_rotation, label="Validation")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Rotation Output Learning Curve")
+    plt.legend()
+
+    plt.subplot(1, 4, 3)
+    plt.plot(epochs, train_losses_color, label="Training")
+    plt.plot(epochs, val_losses_color, label="Validation")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Color Output Learning Curve")
+    plt.legend()
+
+    plt.subplot(1, 4, 4)
+    plt.plot(epochs, train_losses, label="Training")
+    plt.plot(epochs, val_losses, label="Validation")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Global Output Learning Curve")
+    plt.legend()
+
+    plt.show()
+
+    # writer.close()
 
