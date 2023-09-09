@@ -28,26 +28,23 @@ import matplotlib.pyplot as plt
 
 # Configuration
 class Config:
-    OUTPUT = 'results'
-    DATASET_PATH = './data'
-    LABELS_PATH = 'data.csv'
-    IMAGES_PATH = 'images'
+    OUTPUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results')
+    DATASET_PATH = "/Users/jordivallverdu/Documents/360code/apps/lego_sorter/data"
+    LABELS_PATH = os.path.join(DATASET_PATH, "data.csv")
+    IMAGES_PATH = os.path.join(DATASET_PATH, "images")
+    SUMMARY_PATH = os.path.join(DATASET_PATH, "summary")
+    DEBUG_PATH = os.path.join(DATASET_PATH, "examples")
     IMAGE_RESIZE = 128
     AUGMENTATION_FACTOR = 5
-    TRAIN_SPLIT = 0.8
+    TRAIN_SPLIT= 0.8
     BATCH_SIZE = 10
-    EPOCHS = 20
     FREEZE_BACKBONE = True
+    EPOCHS = 20
+    DEBUG = False
+    CKPT_SAVE_INTERVAL = 5
+    LR = 1e-3
+    EPS = 1e-6
 
-# Data Augmentation using imgaug
-augmentation = iaa.Sequential([
-    iaa.CropAndPad(percent=(0, 0.1)),
-    iaa.Affine(rotate=(-20, 20)),
-    iaa.Resize({"height": Config.IMAGE_RESIZE, "width": Config.IMAGE_RESIZE}),
-    iaa.MultiplyAndAddToBrightness(mul=(0.5, 1.5), add=(-30, 30)),
-    iaa.GammaContrast((0.5, 2.0), per_channel=True),
-    iaa.GaussianBlur((0, 3.0))
-])
 
 # Define the dataset class
 class LegoDataset(Dataset):
