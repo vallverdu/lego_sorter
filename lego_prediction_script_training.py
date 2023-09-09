@@ -177,42 +177,76 @@ class LegoModel(nn.Module):
 
 # Training and Evaluation Functions
 
-def train(model, dataloader, criterion, optimizer, device):
+def train(model, data_loader, optimizer, device):
+
+    data_loader.dataset.dataset.do_aug = True
+    data_loader.dataset.dataset.augmentation_factor = Config.AUGMENTATION_FACTOR
+
     model.train()
-    total_loss = 0.0
+
+    train_loss_brick_type = 0.0
+    train_loss_rotation = 0.0
+    train_loss_color = 0.0
+    train_loss = 0.0
     
-    for images, brick_types, rotation_x, rotation_y, rotation_z, color_r, color_g, color_b in dataloader:
-        images = images.to(device)
-        brick_types = brick_types.to(device)
+    pbar = tqdm(data_loader)
+
+    for batch_idx, (
+        image,
+        brick_type,
+        rotation_x,
+        rotation_y,
+        rotation_z,
+        color_r,
+        color_g,
+        color_b
+
+    ) in enumerate(pbar, 0):
+        
+        image = image.to(device)
+        brick_types = brick_type.to(device)
         rotations = torch.stack((rotation_x, rotation_y, rotation_z), dim=1).to(device)
         colors = torch.stack((color_r, color_g, color_b), dim=1).to(device)
         
+        # Optimizer zero
         optimizer.zero_grad()
         
-        # Forward pass
-        out_brick_type, out_rotation, out_color = model(images)
+        # Model inference
+        out_brick_type, out_rotation, out_color = model(image)
         
         # Calculate loss
-        loss1 = criterion(out_brick_type, brick_types)
-        loss2 = criterion(out_rotation, rotations)
-        loss3 = criterion(out_color, colors)
-        loss = loss1 + loss2 + loss3
+        loss_brick = criterion_brick_type(out_brick_type, brick_types)
+        loss_rotation = criterion_values(out_rotation, rotations)
+        loss_color = criterion_values(out_color, colors)
+        loss = 1 * loss_brick + 1 * loss_rotation + 1 * loss_color # we could penalize more each parameter
         
+        pbar.set_description(f"TRAIN loss={float(loss)} | loss_brick={float(loss_brick)} | loss_rotation={float(loss_rotation)} | loss_color={float(loss_color)}")
+
+
         # Backward pass and optimization
         loss.backward()
-        optimizer.step()
         
-        total_loss += loss.item()
-    
-    avg_loss = total_loss / len(dataloader)
-    return avg_loss
+        # Optimizer
+        optimizer.step()
 
-def validate(model, dataloader, criterion, device):
+        train_loss_brick_type += loss_brick.item()
+        train_loss_rotation += loss_rotation.item()
+        train_loss_color += loss_color.item()
+        train_loss += loss.item()
+        
+    loss_brick_type = train_loss_brick_type / len(data_loader)
+    loss_rotation = train_loss_rotation / len(data_loader)
+    loss_color = train_loss_color / len(data_loader)
+    avg_loss = train_loss / len(data_loader)
+
+    return avg_loss, loss_brick_type, loss_rotation, loss_color
+
+def validate(model, data_loader, criterion, device):
     model.eval()
     total_loss = 0.0
     
     with torch.no_grad():
-        for images, brick_types, rotation_x, rotation_y, rotation_z, color_r, color_g, color_b in dataloader:
+        for images, brick_types, rotation_x, rotation_y, rotation_z, color_r, color_g, color_b in data_loader:
             images = images.to(device)
             brick_types = brick_types.to(device)
             rotations = torch.stack((rotation_x, rotation_y, rotation_z), dim=1).to(device)
@@ -222,15 +256,20 @@ def validate(model, dataloader, criterion, device):
             out_brick_type, out_rotation, out_color = model(images)
             
             # Calculate loss
-            loss1 = criterion(out_brick_type, brick_types)
-            loss2 = criterion(out_rotation, rotations)
-            loss3 = criterion(out_color, colors)
+            loss_brick = criterion_brick_type(out_brick_type, brick_types)
+            loss2 = criterion_values(out_rotation, rotations)
+            loss3 = criterion_values(out_color, colors)
             loss = loss1 + loss2 + loss3
             
             total_loss += loss.item()
     
-    avg_loss = total_loss / len(dataloader)
+    avg_loss = total_loss / len(data_loader)
     return avg_loss
+
+def criterion_values(pred, true):
+    return F.mse_loss(torch.sigmoid(pred), true)
+  
+criterion_brick_type = nn.CrossEntropyLoss()
 
 # Main Execution
 if __name__ == "__main__":
