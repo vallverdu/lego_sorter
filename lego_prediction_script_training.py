@@ -39,7 +39,7 @@ class Config:
     TRAIN_SPLIT= 0.8
     BATCH_SIZE = 10
     FREEZE_BACKBONE = True
-    EPOCHS = 20
+    EPOCHS = 2
     DEBUG = False
     CKPT_SAVE_INTERVAL = 5
     LR = 1e-3
@@ -80,6 +80,9 @@ class LegoDataset(Dataset):
             iaa.Resize({"height": Config.IMAGE_RESIZE, "width": Config.IMAGE_RESIZE})
         ])
 
+        self.augmentation_factor = augmentation_factor
+        self.do_aug = do_aug
+
     def __len__(self):
         return len(self.data) * self.augmentation_factor
 
@@ -90,7 +93,7 @@ class LegoDataset(Dataset):
         sample = self.data.iloc[original_index]
 
         img_name = sample['filename']
-        img_path = os.path.join(self.root_dir, img_name + '.png')
+        img_path = os.path.join(self.root_dir,'images', img_name + '.png')
         image = np.array(Image.open(img_path))[..., :3]
 
         # Extract target variables
@@ -107,7 +110,9 @@ class LegoDataset(Dataset):
         
         # Apply augmentations
         if self.do_aug:
-            image = augmentation(image=image)
+            image = self.seq_train(image=image)
+        else :
+            image = self.seq_test(image=image)
         
         image = Image.fromarray(image)
 
@@ -135,14 +140,21 @@ class LegoModel(nn.Module):
         self.inference = inference
 
         # Load ResNet18 pre-trained on ImageNet
-        self.resnet = models.resnet18(pretrained=True)
+        model = models.resnet18(pretrained=True)
+
+        self.backbone = nn.Sequential(
+            model.conv1, 
+            model.bn1, 
+            model.relu, 
+            model.maxpool, 
+            model.layer1, 
+            model.layer2, 
+            model.layer3, 
+            model.layer4
+        )
         
         # Modify the final layer to handle multiple outputs
-        num_features = self.resnet.fc.in_features
-        
-        # Remove the final layer
-        self.resnet.fc = nn.Identity()  
-        
+        num_features = model.fc.in_features
         
         # Freeze backbone
         # optional for speed or few-shot-learning
@@ -157,7 +169,8 @@ class LegoModel(nn.Module):
 
 
     def forward(self, x):
-        x = self.resnet(x)
+        x = self.backbone(x)
+        x = x.mean(dim=(2, 3))
 
         brick_type = self.fc_brick_type(x)
         rotation = self.fc_rotation(x)
@@ -238,7 +251,7 @@ def train(model, data_loader, optimizer, device, epoch):
 
     return avg_loss, loss_brick_type, loss_rotation, loss_color
 
-def test(model, data_loader, device):
+def test(model, data_loader, device, epoch):
 
     data_loader.dataset.dataset.do_aug = False
     data_loader.dataset.dataset.augmentation_factor = 1
@@ -289,7 +302,7 @@ def test(model, data_loader, device):
 
             pbar.set_description(f"TEST loss={float(loss)} | loss_brick={float(loss_brick)} | loss_rotation={float(loss_rotation)} | loss_color={float(loss_color)}")
 
-            test_loss_brick += loss_brick.item()
+            test_loss_brick_type += loss_brick.item()
             test_loss_rotation += loss_rotation.item()
             test_loss_color += loss_color.item()
             test_loss += loss.item()
@@ -314,7 +327,7 @@ def test(model, data_loader, device):
             # total_eye_position_mae += np.sum(np.abs(eye_position_diff), axis=0)
             # total_eye_position_mse += np.sum(eye_position_diff**2, axis=0)
 
-    loss_brick = test_loss_brick / len(data_loader)
+    loss_brick = test_loss_brick_type / len(data_loader)
     loss_rotation = test_loss_rotation / len(data_loader)
     loss_color = test_loss_color / len(data_loader)
     avg_loss = test_loss / len(data_loader)
@@ -361,7 +374,7 @@ if __name__ == "__main__":
 
     # Define the dataset and data loader
     lego_dataset = LegoDataset('data.csv', './data', transform=data_transform)
-    train_size = int(Config.TRAIN_SPLIT * len(facelego_dataset_dataset))
+    train_size = int(Config.TRAIN_SPLIT * len(lego_dataset))
     test_size = len(lego_dataset) - train_size
     print('train_size',train_size)
     print('test_size',test_size)

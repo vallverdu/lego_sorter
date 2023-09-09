@@ -1,3 +1,5 @@
 /blender/*
 /data/*
+/results/*
 *.zip
+*.pth
