@@ -38,13 +38,7 @@ class LegoModel(nn.Module):
         
         # Modify the final layer to handle multiple outputs
         num_features = model.fc.in_features
-        
-        # Freeze backbone
-        # optional for speed or few-shot-learning
-        if Config.FREEZE_BACKBONE :
-            for param in self.backbone.parameters() :
-                param.requires_grad = False
-        
+
         # Define the new final layers for our multi-output prediction
         self.fc_brick_type = nn.Linear(num_features, num_brick_types)
         self.fc_rotation = nn.Linear(num_features, 3)
@@ -84,8 +78,7 @@ if __name__ == '__main__':
 
     # Initialize the model
     model = LegoModel()
-    # modelPath = './ckpt/ckpt_15_2.7193858101963997.pth'
-    modelPath = './ckpt/best_16_0.2764944826439023.pth'
+    modelPath = './ckpt/best_11_334.72284637451173.pth'
 
     # Initialize model with the pretrained weights
     model.load_state_dict(torch.load(modelPath, map_location='cpu'))
@@ -112,7 +105,7 @@ if __name__ == '__main__':
 					
 	)
 
-    quantize_onnx_model("./ckpt/model.onnx", "./ckpt/model.quantized.onnx")
+    quantize_onnx_model("./ckpt/model_best.onnx", "./ckpt/model.quantized.onnx")
 
 
 

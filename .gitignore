@@ -2,5 +2,7 @@
 /data/*
 /results/*
 /ckpt/*
+/Lego_sorter_web/node_modules/*
 *.zip
 *.pth
+*.onnx

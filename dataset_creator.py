@@ -2,6 +2,7 @@ import bpy
 import random
 import os
 import math
+import mathutils
 import numpy as np
 import csv
 import uuid
@@ -18,15 +19,28 @@ def hide_children(obj, hide_status):
 
 
 def generate_random_rotation():
+    '''
+    Either rot_x or rot_y will be applied, but not both.
+    The chosen one can take the values 0, 90, 180, or 270 degrees.
+    rot_z is always applied and can take any value between 0 and 360 degrees.
+    '''
+
     # Z-axis rotation: any value between 0 and 360 degrees
     rot_z = random.uniform(0, 360)
 
     # X and Y rotations: 0, 90, 180, or 270 degrees
     possible_rotations = [0, 90, 180, 270]
-    rot_x = random.choice(possible_rotations)
-    rot_y = random.choice(possible_rotations)
+
+    # Randomly choose to rotate on x-axis or y-axis
+    if random.choice(['x', 'y']) == 'x':
+        rot_x = random.choice(possible_rotations)
+        rot_y = 0  # No rotation on y-axis
+    else:
+        rot_y = random.choice(possible_rotations)
+        rot_x = 0  # No rotation on x-axis
 
     return rot_x, rot_y, rot_z
+
 
 
 def ensure_piece_has_mass(piece):
@@ -107,10 +121,12 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine):
     # Set the Engine for rendering
     bpy.context.scene.render.engine = engine
 
+    os.makedirs(output_folder, exist_ok=True)
     
+
     # Set the desired resolution
-    bpy.context.scene.render.resolution_x = 128
-    bpy.context.scene.render.resolution_y = 128
+    bpy.context.scene.render.resolution_x = 256
+    bpy.context.scene.render.resolution_y = 256
     
     # Adjust camera's clip start for small objects
     bpy.data.cameras['Camera'].clip_start = 0.001
@@ -143,8 +159,15 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine):
             # Randomly rotate the piece
             # piece.rotation_euler = (random.uniform(0,6.28), random.uniform(0,6.28), random.uniform(0,6.28))
             rot_x, rot_y, rot_z = generate_random_rotation()
-            piece.rotation_euler = (rot_x, rot_y, rot_z)
-            # print('initial rotation x: ',piece.rotation_euler.x,' y: ', piece.rotation_euler.y, ' z: ',piece.rotation_euler.z)
+            
+            rot_x_rad = math.radians(rot_x)
+            rot_y_rad = math.radians(rot_y)
+            rot_z_rad = math.radians(rot_z)
+
+            # eul = mathutils.Euler((rot_x_rad, rot_y_rad, rot_z_rad), 'XYZ')
+            eul = mathutils.Euler((rot_x_rad, rot_y_rad, rot_z_rad), 'XYZ')
+            piece.rotation_euler = eul
+            print('initial rotation x: ',piece.rotation_euler.x,' y: ', piece.rotation_euler.y, ' z: ',piece.rotation_euler.z)
             
         
             # final_rotation =  apply_gravity_to_piece(piece)
@@ -159,11 +182,11 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine):
 
             # Random adjustments for each render:
             light.location = (
-                original_light_location.x + random.uniform(-0.2, 0.2),
-                original_light_location.y + random.uniform(-0.2, 0.2),
-                original_light_location.z + random.uniform(-0.2, 0.2)
+                original_light_location.x + random.uniform(-0.3, 0.3),
+                original_light_location.y + random.uniform(-0.3, 0.3),
+                original_light_location.z + random.uniform(-0.3, 0.3)
             )
-            light.data.energy = original_light_power + random.uniform(-10, 10)
+            light.data.energy = original_light_power + random.uniform(-50, 50)
             light.data.color = (
                 original_light_color[0] + random.uniform(-0.1, 0.1),
                 original_light_color[1] + random.uniform(-0.1, 0.1),
@@ -172,9 +195,13 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine):
             
             # Change the piece's color
             color = (random.random(), random.random(), random.random(), 1)
-            if piece.material_slots:
-                piece.material_slots[0].material.diffuse_color = color
 
+            if piece.material_slots:
+                mat = piece.material_slots[0].material
+                nodes = mat.node_tree.nodes
+                principled = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
+                principled.inputs[0].default_value = color  # Base Color
+                
             # Render the brick 
             # Generate a short UUID for filename
             short_uuid = str(uuid.uuid4())[:8]
@@ -208,7 +235,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Generate synthetic images in Blender.")
     parser.add_argument("--output_folder",    type=str, default="./dataset/", help="Path to the folder where images will be saved.")
-    parser.add_argument("--num_images",       type=int, default=5000, help="Number of synthetic images to generate.")
+    parser.add_argument("--num_images",       type=int, default=10000, help="Number of synthetic images to generate.")
     parser.add_argument("--csv_filename",     type=str, default="./dataset.csv", help="Path to the CSV file to store metadata.")
     parser.add_argument("--engine",           type=str, default="BLENDER_EEVEE", choices=["CYCLES", "BLENDER_EEVEE"], help="Blender rendering engine to use.")
 
