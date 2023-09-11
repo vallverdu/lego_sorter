@@ -164,8 +164,8 @@ class LegoModel(nn.Module):
         
         # Define the new final layers for our multi-output prediction
         self.fc_brick_type = nn.Linear(num_features, num_brick_types)
-        self.fc_rotation = nn.Linear(num_features, 3)
-        self.fc_color = nn.Linear(num_features, 3)
+        # self.fc_rotation = nn.Linear(num_features, 3)
+        # self.fc_color = nn.Linear(num_features, 3)
 
 
     def forward(self, x):
@@ -173,15 +173,16 @@ class LegoModel(nn.Module):
         x = x.mean(dim=(2, 3))
 
         brick_type = self.fc_brick_type(x)
-        rotation = self.fc_rotation(x)
-        color = self.fc_color(x)
+        # rotation = self.fc_rotation(x)
+        # color = self.fc_color(x)
 
         if self.inference:
             brick_type = torch.softmax(brick_type, dim=1)
-            rotation = torch.sigmoid(rotation)
-            color = torch.sigmoid(color)
+            # rotation = torch.sigmoid(rotation)
+            # color = torch.sigmoid(color)
 
-        return brick_type, rotation, color
+        # return brick_type, rotation, color
+        return brick_type
 
 
 
@@ -222,15 +223,18 @@ def train(model, data_loader, optimizer, device, epoch):
         optimizer.zero_grad()
         
         # Model inference
-        out_brick_type, out_rotation, out_color = model(image)
+        # out_brick_type, out_rotation, out_color = model(image)
+        out_brick_type = model(image)
         
         # Calculate loss
         loss_brick = criterion_brick_type(out_brick_type, brick_type)
-        loss_rotation = criterion_values(out_rotation, rotation)
-        loss_color = criterion_values(out_color, color)
-        loss = 1 * loss_brick + 1 * loss_rotation + 1 * loss_color # we could penalize more each parameter
+        # loss_rotation = criterion_values(out_rotation, rotation)
+        # loss_color = criterion_values(out_color, color)
+        # loss = 1 * loss_brick + 1 * loss_rotation + 1 * loss_color # we could penalize more each parameter
+        loss = loss_brick
         
-        pbar.set_description(f"TRAIN loss={float(loss)} | loss_brick={float(loss_brick)} | loss_rotation={float(loss_rotation)} | loss_color={float(loss_color)}")
+        # pbar.set_description(f"TRAIN loss={float(loss)} | loss_brick={float(loss_brick)} | loss_rotation={float(loss_rotation)} | loss_color={float(loss_color)}")
+        pbar.set_description(f"TRAIN loss={float(loss)}")
 
 
         # Backward pass and optimization
@@ -239,17 +243,18 @@ def train(model, data_loader, optimizer, device, epoch):
         # Optimizer
         optimizer.step()
 
-        train_loss_brick_type += loss_brick.item()
-        train_loss_rotation += loss_rotation.item()
-        train_loss_color += loss_color.item()
+        # train_loss_brick_type += loss_brick.item()
+        # train_loss_rotation += loss_rotation.item()
+        # train_loss_color += loss_color.item()
         train_loss += loss.item()
         
-    loss_brick_type = train_loss_brick_type / len(data_loader)
-    loss_rotation = train_loss_rotation / len(data_loader)
-    loss_color = train_loss_color / len(data_loader)
+    # loss_brick_type = train_loss_brick_type / len(data_loader)
+    # loss_rotation = train_loss_rotation / len(data_loader)
+    # loss_color = train_loss_color / len(data_loader)
     avg_loss = train_loss / len(data_loader)
 
-    return avg_loss, loss_brick_type, loss_rotation, loss_color
+    # return avg_loss, loss_brick_type, loss_rotation, loss_color
+    return avg_loss
 
 def test(model, data_loader, device, epoch):
 
@@ -288,23 +293,26 @@ def test(model, data_loader, device, epoch):
             
             image = image.to(device)
             brick_type = brick_type.to(device)
-            rotation = torch.stack((rotation_x, rotation_y, rotation_z), dim=1).to(device)
-            color = torch.stack((color_r, color_g, color_b), dim=1).to(device)
+            # rotation = torch.stack((rotation_x, rotation_y, rotation_z), dim=1).to(device)
+            # color = torch.stack((color_r, color_g, color_b), dim=1).to(device)
        
             # Forward pass
-            out_brick_type, out_rotation, out_color = model(image)
+            # out_brick_type, out_rotation, out_color = model(image)
+            out_brick_type = model(image)
 
             # Calculate loss
             loss_brick = criterion_brick_type(out_brick_type, brick_type)
-            loss_rotation = criterion_values(out_rotation, rotation)
-            loss_color = criterion_values(out_color, color)
-            loss = 1 * loss_brick + 1 * loss_rotation + 1 * loss_color
+            # loss_rotation = criterion_values(out_rotation, rotation)
+            # loss_color = criterion_values(out_color, color)
+            # loss = 1 * loss_brick + 1 * loss_rotation + 1 * loss_color
+            loss = loss_brick
 
-            pbar.set_description(f"TEST loss={float(loss)} | loss_brick={float(loss_brick)} | loss_rotation={float(loss_rotation)} | loss_color={float(loss_color)}")
+            # pbar.set_description(f"TEST loss={float(loss)} | loss_brick={float(loss_brick)} | loss_rotation={float(loss_rotation)} | loss_color={float(loss_color)}")
+            pbar.set_description(f"TEST loss={float(loss)}")
 
-            test_loss_brick_type += loss_brick.item()
-            test_loss_rotation += loss_rotation.item()
-            test_loss_color += loss_color.item()
+            # test_loss_brick_type += loss_brick.item()
+            # test_loss_rotation += loss_rotation.item()
+            # test_loss_color += loss_color.item()
             test_loss += loss.item()
 
             # total_type_correct
@@ -327,12 +335,13 @@ def test(model, data_loader, device, epoch):
             # total_eye_position_mae += np.sum(np.abs(eye_position_diff), axis=0)
             # total_eye_position_mse += np.sum(eye_position_diff**2, axis=0)
 
-    loss_brick = test_loss_brick_type / len(data_loader)
-    loss_rotation = test_loss_rotation / len(data_loader)
-    loss_color = test_loss_color / len(data_loader)
+    # loss_brick = test_loss_brick_type / len(data_loader)
+    # loss_rotation = test_loss_rotation / len(data_loader)
+    # loss_color = test_loss_color / len(data_loader)
     avg_loss = test_loss / len(data_loader)
 
-    return avg_loss, loss_brick, loss_rotation, loss_color, type_correct
+    # return avg_loss, loss_brick, loss_rotation, loss_color, type_correct
+    return avg_loss, type_correct
 
 def criterion_values(pred, true):
     return F.mse_loss(torch.sigmoid(pred), true)
@@ -421,30 +430,27 @@ if __name__ == "__main__":
 
     # Train the model
     for epoch in range(Config.EPOCHS):
-        (
-            train_loss, 
-            train_loss_brick_type, 
-            train_loss_rotation, 
-            train_loss_color 
-        ) = train(model, train_loader, optimizer, device, epoch)
         
-        (
-            val_loss, 
-            val_loss_brick, 
-            val_loss_rotation, 
-            val_loss_color, 
-            total_type_correct
-        ) = test(model, test_loader, device, epoch)
+        # (
+        #     train_loss, 
+        #     train_loss_brick_type, 
+        #     train_loss_rotation, 
+        #     train_loss_color 
+        # ) = train(model, train_loader, optimizer, device, epoch)
+        
+        train_loss = train(model, train_loader, optimizer, device, epoch)
+        
+        val_loss, total_type_correct = test(model, test_loader, device, epoch)
 
-        train_losses.append(train_loss)
-        train_losses_type.append(train_loss_brick_type)
-        train_losses_rotation.append(train_loss_rotation)
-        train_losses_color.append(train_loss_color)
+        # train_losses.append(train_loss)
+        # train_losses_type.append(train_loss_brick_type)
+        # train_losses_rotation.append(train_loss_rotation)
+        # train_losses_color.append(train_loss_color)
 
-        val_losses.append(val_loss)
-        val_losses_type.append(val_loss_brick)
-        val_losses_rotation.append(val_loss_rotation)
-        val_losses_color.append(val_loss_color)
+        # val_losses.append(val_loss)
+        # val_losses_type.append(val_loss_brick)
+        # val_losses_rotation.append(val_loss_rotation)
+        # val_losses_color.append(val_loss_color)
         
         # Compute average metrics for the epoch
         epoch_type_accuracy = total_type_correct / len(lego_dataset) * 100
@@ -466,13 +472,13 @@ if __name__ == "__main__":
         # Print progress
         print(f"Epoch {epoch + 1}/{Config.EPOCHS}\n"
             
-            f"Train Loss (Brick_type): {train_loss_brick_type:.4f}, "
-            f"Train Loss (Rotation): {train_loss_rotation:.4f}, "
-            f"Train Loss (Color): {train_loss_color:.4f}\n "
+            # f"Train Loss (Brick_type): {train_loss_brick_type:.4f}, "
+            # f"Train Loss (Rotation): {train_loss_rotation:.4f}, "
+            # f"Train Loss (Color): {train_loss_color:.4f}\n "
 
-            f"Validation Loss (Brick_type): {val_loss_brick:.4f}, "
-            f"Validation Loss (Rotation): {val_loss_rotation:.4f},"
-            f"Validation Loss (Color): {val_loss_color:.4f}\n"
+            # f"Validation Loss (Brick_type): {val_loss_brick:.4f}, "
+            # f"Validation Loss (Rotation): {val_loss_rotation:.4f},"
+            # f"Validation Loss (Color): {val_loss_color:.4f}\n"
 
             f"Type accuracy: {epoch_type_accuracy:.2f}%\n"
         )
@@ -493,29 +499,29 @@ if __name__ == "__main__":
     plt.title("Type Output Learning Curve")
     plt.legend()
 
-    plt.subplot(1, 4, 2)
-    plt.plot(epochs, train_losses_rotation, label="Training")
-    plt.plot(epochs, val_losses_rotation, label="Validation")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Rotation Output Learning Curve")
-    plt.legend()
+    # plt.subplot(1, 4, 2)
+    # plt.plot(epochs, train_losses_rotation, label="Training")
+    # plt.plot(epochs, val_losses_rotation, label="Validation")
+    # plt.xlabel("Epoch")
+    # plt.ylabel("Loss")
+    # plt.title("Rotation Output Learning Curve")
+    # plt.legend()
 
-    plt.subplot(1, 4, 3)
-    plt.plot(epochs, train_losses_color, label="Training")
-    plt.plot(epochs, val_losses_color, label="Validation")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Color Output Learning Curve")
-    plt.legend()
+    # plt.subplot(1, 4, 3)
+    # plt.plot(epochs, train_losses_color, label="Training")
+    # plt.plot(epochs, val_losses_color, label="Validation")
+    # plt.xlabel("Epoch")
+    # plt.ylabel("Loss")
+    # plt.title("Color Output Learning Curve")
+    # plt.legend()
 
-    plt.subplot(1, 4, 4)
-    plt.plot(epochs, train_losses, label="Training")
-    plt.plot(epochs, val_losses, label="Validation")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Global Output Learning Curve")
-    plt.legend()
+    # plt.subplot(1, 4, 4)
+    # plt.plot(epochs, train_losses, label="Training")
+    # plt.plot(epochs, val_losses, label="Validation")
+    # plt.xlabel("Epoch")
+    # plt.ylabel("Loss")
+    # plt.title("Global Output Learning Curve")
+    # plt.legend()
 
     plt.show()
 
