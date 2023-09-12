@@ -34,7 +34,7 @@ class Config:
     IMAGES_PATH = os.path.join(DATASET_PATH, "images")
     SUMMARY_PATH = os.path.join(DATASET_PATH, "summary")
     DEBUG_PATH = os.path.join(DATASET_PATH, "examples")
-    IMAGE_RESIZE = 128
+    IMAGE_RESIZE = 256
     AUGMENTATION_FACTOR = 30
     TRAIN_SPLIT= 0.8
     BATCH_SIZE = 64
@@ -157,7 +157,7 @@ class EarlyStopping:
 
 # The sections for Model, Training, and Evaluation will be added next...
 
-# Multi-output ResNet Model
+# ResNet 34 Finetune Model
 class LegoModel(nn.Module):
     def __init__(self, num_brick_types = 11, inference = True):
         super(LegoModel, self).__init__()
@@ -232,7 +232,7 @@ def train(model, data_loader, optimizer, device, epoch):
         out_brick_type = model(image)
         
         # Calculate loss
-        loss_brick = criterion_brick_type(out_brick_type, brick_type)
+        loss = criterion_brick_type(out_brick_type, brick_type)
         
 
 
