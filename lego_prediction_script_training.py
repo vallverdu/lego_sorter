@@ -35,14 +35,14 @@ class Config:
     SUMMARY_PATH = os.path.join(DATASET_PATH, "summary")
     DEBUG_PATH = os.path.join(DATASET_PATH, "examples")
     IMAGE_RESIZE = 128
-    AUGMENTATION_FACTOR = 5
+    AUGMENTATION_FACTOR = 30
     TRAIN_SPLIT= 0.8
-    BATCH_SIZE = 10
+    BATCH_SIZE = 64
     FREEZE_BACKBONE = True
     EPOCHS = 2
     DEBUG = False
     CKPT_SAVE_INTERVAL = 5
-    LR = 1e-3
+    LR = 1e-4
     EPS = 1e-6
 
 
@@ -73,7 +73,18 @@ class LegoDataset(Dataset):
             iaa.Resize({"height": Config.IMAGE_RESIZE, "width": Config.IMAGE_RESIZE}),
             iaa.MultiplyAndAddToBrightness(mul=(0.5, 1.5), add=(-30, 30)),
             iaa.GammaContrast((0.5, 2.0), per_channel=True),
-            iaa.GaussianBlur((0, 3.0))
+            iaa.GaussianBlur((0, 3.0)),
+            iaa.CoarseDropout((0.03, 0.15), size_percent=(0.02, 0.05), per_channel=0.2),
+            iaa.AdditiveGaussianNoise(loc=0, scale=(0.0, 0.05*255), per_channel=0.5),
+            iaa.ContrastNormalization((0.75, 1.5)),
+            iaa.Multiply((0.8, 1.2), per_channel=0.2),
+            iaa.AddToHueAndSaturation((-20, 20)),
+            iaa.Affine(shear=(-15, 15)),
+            iaa.Affine(translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)}),
+            iaa.Affine(scale={"x": (0.8, 1.2), "y": (0.8, 1.2)}),
+            iaa.Flipud(0.3),
+            iaa.Fliplr(0.3),
+            iaa.Dropout((0.01, 0.1), per_channel=0.5)
         ])
 
         self.seq_test = iaa.Sequential([
@@ -130,6 +141,34 @@ class LegoDataset(Dataset):
             torch.tensor(color_b).float()
         )
 
+
+class EarlyStopping:
+    def __init__(self, patience=7, delta=0, verbose=False):
+        self.patience = patience
+        self.verbose = verbose
+        self.counter = 0
+        self.best_score = None
+        self.early_stop = False
+        self.delta = delta
+
+    def __call__(self, val_loss):
+
+        score = -val_loss
+
+        if self.best_score is None:
+            self.best_score = score
+        elif score < self.best_score + self.delta:
+            self.counter += 1
+            if self.verbose:
+                print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_score = score
+            self.counter = 0
+
+
+
 # The sections for Model, Training, and Evaluation will be added next...
 
 # Multi-output ResNet Model
@@ -139,8 +178,8 @@ class LegoModel(nn.Module):
 
         self.inference = inference
 
-        # Load ResNet18 pre-trained on ImageNet
-        model = models.resnet18(pretrained=True)
+         # Load resnet34 pre-trained on ImageNet
+        model = models.resnet34(pretrained=True)
 
         self.backbone = nn.Sequential(
             model.conv1, 
@@ -164,8 +203,6 @@ class LegoModel(nn.Module):
         
         # Define the new final layers for our multi-output prediction
         self.fc_brick_type = nn.Linear(num_features, num_brick_types)
-        # self.fc_rotation = nn.Linear(num_features, 3)
-        # self.fc_color = nn.Linear(num_features, 3)
 
 
     def forward(self, x):
@@ -173,15 +210,10 @@ class LegoModel(nn.Module):
         x = x.mean(dim=(2, 3))
 
         brick_type = self.fc_brick_type(x)
-        # rotation = self.fc_rotation(x)
-        # color = self.fc_color(x)
 
         if self.inference:
             brick_type = torch.softmax(brick_type, dim=1)
-            # rotation = torch.sigmoid(rotation)
-            # color = torch.sigmoid(color)
 
-        # return brick_type, rotation, color
         return brick_type
 
 
@@ -396,6 +428,7 @@ if __name__ == "__main__":
     model = LegoModel(inference=False)
 
     optimizer = optim.Adam(model.parameters(), lr=Config.LR, eps = Config.EPS)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 
     model.to(device)
 
@@ -404,58 +437,37 @@ if __name__ == "__main__":
     best_epoch = 0
     best_model = None
     best_type_accuracy = None
-    best_rotation_mae = None
-    best_rotation_rmse = None
-    best_color_mae = None
-    best_color_rmse = None
 
     # Initialize accumulators
     train_losses = []
-    train_losses_type = []
-    train_losses_rotation = []
-    train_losses_color = []
-
     val_losses = []
-    val_losses_type = []
-    val_losses_rotation = []
-    val_losses_color = []
-
     epochs_type_accuracy  = []
-    epochs_rotation_mae  = []
-    epochs_rotation_rmse  = []
-    epochs_color_mae  = []
-    epochs_color_rmse  = []
 
-    # writer = SummaryWriter()
+
+    early_stopping = EarlyStopping(patience=10, verbose=True)
 
     # Train the model
     for epoch in range(Config.EPOCHS):
         
-        # (
-        #     train_loss, 
-        #     train_loss_brick_type, 
-        #     train_loss_rotation, 
-        #     train_loss_color 
-        # ) = train(model, train_loader, optimizer, device, epoch)
         
         train_loss = train(model, train_loader, optimizer, device, epoch)
-        
         val_loss, total_type_correct = test(model, test_loader, device, epoch)
 
-        # train_losses.append(train_loss)
-        # train_losses_type.append(train_loss_brick_type)
-        # train_losses_rotation.append(train_loss_rotation)
-        # train_losses_color.append(train_loss_color)
+        # Append losses for plotting
+        train_losses.append(train_loss)
+        val_losses.append(val_loss)
 
-        # val_losses.append(val_loss)
-        # val_losses_type.append(val_loss_brick)
-        # val_losses_rotation.append(val_loss_rotation)
-        # val_losses_color.append(val_loss_color)
-        
         # Compute average metrics for the epoch
         epoch_type_accuracy = total_type_correct / len(lego_dataset) * 100
 
-
+        # Save the best model
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_epoch = epoch
+            best_model = model.state_dict()
+            best_gender_accuracy = epoch_type_accuracy
+        
+        # Checkpointing
         if epoch > 0 and epoch % Config.CKPT_SAVE_INTERVAL == 0 :
             print(f"Saved checkpoint {epoch}\n")
             model_path_solve = os.path.join(CHECKPOINTS_FOLDER, f"ckpt_{epoch}_{val_loss}.pth")
@@ -463,67 +475,40 @@ if __name__ == "__main__":
             torch.save(model.state_dict(), model_path_solve)
             torch.save(optimizer.state_dict(), optimizer_path_solve)
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            best_epoch = epoch
-            best_model = model.state_dict()
-            best_gender_accuracy = epoch_type_accuracy
-            
         # Print progress
         print(f"Epoch {epoch + 1}/{Config.EPOCHS}\n"
-            
-            # f"Train Loss (Brick_type): {train_loss_brick_type:.4f}, "
-            # f"Train Loss (Rotation): {train_loss_rotation:.4f}, "
-            # f"Train Loss (Color): {train_loss_color:.4f}\n "
+          f"Type accuracy: {epoch_type_accuracy:.2f}%\n"
+          f"Validation loss: {val_loss:.4f}")
+        
 
-            # f"Validation Loss (Brick_type): {val_loss_brick:.4f}, "
-            # f"Validation Loss (Rotation): {val_loss_rotation:.4f},"
-            # f"Validation Loss (Color): {val_loss_color:.4f}\n"
+        # Step the scheduler
+        scheduler.step()
 
-            f"Type accuracy: {epoch_type_accuracy:.2f}%\n"
-        )
-    
+        # Check for early stopping
+        early_stopping(val_loss)
+        if early_stopping.early_stop:
+            print(f"Early stopping")
+            break
+        
+       
+
     # Save the best model
-    torch.save(best_model, "best_{}_{}.pth".format(best_epoch, best_val_loss))
+    torch.save(best_model, os.path.join(CHECKPOINTS_FOLDER, f"best_{best_epoch}_{best_val_loss}.pth"))
+
+        
+
 
     # Plot the learning curves
     epochs = range(1, Config.EPOCHS + 1)
 
-    plt.figure(figsize=(20, 5))
-
-    plt.subplot(1, 4, 1)
-    plt.plot(epochs, train_losses_type, label="Training")
-    plt.plot(epochs, val_losses_type, label="Validation")
+    plt.figure(figsize=(12, 8))
+    plt.plot(epochs, train_losses, label="Training")
+    plt.plot(epochs, val_losses, label="Validation")
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.title("Type Output Learning Curve")
     plt.legend()
-
-    # plt.subplot(1, 4, 2)
-    # plt.plot(epochs, train_losses_rotation, label="Training")
-    # plt.plot(epochs, val_losses_rotation, label="Validation")
-    # plt.xlabel("Epoch")
-    # plt.ylabel("Loss")
-    # plt.title("Rotation Output Learning Curve")
-    # plt.legend()
-
-    # plt.subplot(1, 4, 3)
-    # plt.plot(epochs, train_losses_color, label="Training")
-    # plt.plot(epochs, val_losses_color, label="Validation")
-    # plt.xlabel("Epoch")
-    # plt.ylabel("Loss")
-    # plt.title("Color Output Learning Curve")
-    # plt.legend()
-
-    # plt.subplot(1, 4, 4)
-    # plt.plot(epochs, train_losses, label="Training")
-    # plt.plot(epochs, val_losses, label="Validation")
-    # plt.xlabel("Epoch")
-    # plt.ylabel("Loss")
-    # plt.title("Global Output Learning Curve")
-    # plt.legend()
-
     plt.show()
 
-    # writer.close()
+
 
