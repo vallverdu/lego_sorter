@@ -110,15 +110,7 @@ class LegoDataset(Dataset):
         # Extract target variables
         brick_type = self.brick_type_dict[sample['brick_type']]
 
-        rotation_x = sample['rotation_x']
-        rotation_y = sample['rotation_y']
-        rotation_z = sample['rotation_z']
-
-        color_r = sample['color_r']
-        color_g = sample['color_g']
-        color_b = sample['color_b']
-
-        
+       
         # Apply augmentations
         if self.do_aug:
             image = self.seq_train(image=image)
@@ -132,13 +124,7 @@ class LegoDataset(Dataset):
         
         return (
             image,
-            torch.tensor(brick_type).long(),
-            torch.tensor(rotation_x).float(),
-            torch.tensor(rotation_y).float(),
-            torch.tensor(rotation_z).float(),
-            torch.tensor(color_r).float(),
-            torch.tensor(color_g).float(),
-            torch.tensor(color_b).float()
+            torch.tensor(brick_type).long()
         )
 
 
@@ -227,46 +213,27 @@ def train(model, data_loader, optimizer, device, epoch):
 
     model.train()
 
-    train_loss_brick_type = 0.0
-    train_loss_rotation = 0.0
-    train_loss_color = 0.0
     train_loss = 0.0
     
     pbar = tqdm(data_loader)
 
     for batch_idx, (
         image,
-        brick_type,
-        rotation_x,
-        rotation_y,
-        rotation_z,
-        color_r,
-        color_g,
-        color_b
-
+        brick_type
     ) in enumerate(pbar, 0):
         
         image = image.to(device)
         brick_type = brick_type.to(device)
-        rotation = torch.stack((rotation_x, rotation_y, rotation_z), dim=1).to(device)
-        color = torch.stack((color_r, color_g, color_b), dim=1).to(device)
         
         # Optimizer zero
         optimizer.zero_grad()
         
         # Model inference
-        # out_brick_type, out_rotation, out_color = model(image)
         out_brick_type = model(image)
         
         # Calculate loss
         loss_brick = criterion_brick_type(out_brick_type, brick_type)
-        # loss_rotation = criterion_values(out_rotation, rotation)
-        # loss_color = criterion_values(out_color, color)
-        # loss = 1 * loss_brick + 1 * loss_rotation + 1 * loss_color # we could penalize more each parameter
-        loss = loss_brick
         
-        # pbar.set_description(f"TRAIN loss={float(loss)} | loss_brick={float(loss_brick)} | loss_rotation={float(loss_rotation)} | loss_color={float(loss_color)}")
-        pbar.set_description(f"TRAIN loss={float(loss)}")
 
 
         # Backward pass and optimization
@@ -275,14 +242,8 @@ def train(model, data_loader, optimizer, device, epoch):
         # Optimizer
         optimizer.step()
 
-        # train_loss_brick_type += loss_brick.item()
-        # train_loss_rotation += loss_rotation.item()
-        # train_loss_color += loss_color.item()
         train_loss += loss.item()
         
-    # loss_brick_type = train_loss_brick_type / len(data_loader)
-    # loss_rotation = train_loss_rotation / len(data_loader)
-    # loss_color = train_loss_color / len(data_loader)
     avg_loss = train_loss / len(data_loader)
 
     # return avg_loss, loss_brick_type, loss_rotation, loss_color
@@ -296,16 +257,11 @@ def test(model, data_loader, device, epoch):
     model.eval()
 
     test_loss_brick_type = 0.0
-    test_loss_rotation = 0.0
-    test_loss_color = 0.0
     test_loss = 0.0
     
     # Initialize accumulators
     total_type_correct = 0
-    total_rotation_mae = np.zeros(3)
-    total_rotation_mse = np.zeros(3)
-    total_color_mae = np.zeros(3)
-    total_color_mse = np.zeros(3)
+   
 
     pbar = tqdm(data_loader)
 
@@ -313,63 +269,30 @@ def test(model, data_loader, device, epoch):
 
         for batch_idx, (
             image,
-            brick_type,
-            rotation_x,
-            rotation_y,
-            rotation_z,
-            color_r,
-            color_g,
-            color_b
-
+            brick_type
         ) in enumerate(pbar, 0):
             
             image = image.to(device)
             brick_type = brick_type.to(device)
-            # rotation = torch.stack((rotation_x, rotation_y, rotation_z), dim=1).to(device)
-            # color = torch.stack((color_r, color_g, color_b), dim=1).to(device)
        
             # Forward pass
-            # out_brick_type, out_rotation, out_color = model(image)
             out_brick_type = model(image)
 
             # Calculate loss
             loss_brick = criterion_brick_type(out_brick_type, brick_type)
-            # loss_rotation = criterion_values(out_rotation, rotation)
-            # loss_color = criterion_values(out_color, color)
-            # loss = 1 * loss_brick + 1 * loss_rotation + 1 * loss_color
             loss = loss_brick
 
-            # pbar.set_description(f"TEST loss={float(loss)} | loss_brick={float(loss_brick)} | loss_rotation={float(loss_rotation)} | loss_color={float(loss_color)}")
             pbar.set_description(f"TEST loss={float(loss)}")
 
-            # test_loss_brick_type += loss_brick.item()
-            # test_loss_rotation += loss_rotation.item()
-            # test_loss_color += loss_color.item()
+            
             test_loss += loss.item()
 
-            # total_type_correct
-            # total_rotation_mae
-            # total_rotation_mse
-            # total_color_mae
-            # total_color_mse
-
+            
             # Gender accuracy
             type_correct = (torch.argmax(out_brick_type, dim=1) == brick_type).float().sum()
             total_type_correct += type_correct
 
-            # # Age metrics
-            # age_diff = np.array(true_age) - np.array(pred_age)
-            # total_age_mae += np.sum(np.abs(age_diff))
-            # total_age_mse += np.sum(age_diff**2)
-
-            # # Eye position metrics
-            # eye_position_diff = np.array(true_eye) - np.array(pred_eye)
-            # total_eye_position_mae += np.sum(np.abs(eye_position_diff), axis=0)
-            # total_eye_position_mse += np.sum(eye_position_diff**2, axis=0)
-
-    # loss_brick = test_loss_brick_type / len(data_loader)
-    # loss_rotation = test_loss_rotation / len(data_loader)
-    # loss_color = test_loss_color / len(data_loader)
+     
     avg_loss = test_loss / len(data_loader)
 
     # return avg_loss, loss_brick, loss_rotation, loss_color, type_correct
