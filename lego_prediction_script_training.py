@@ -494,7 +494,6 @@ if __name__ == "__main__":
 
     # Save the best model
     torch.save(best_model, os.path.join(CHECKPOINTS_FOLDER, f"best_{best_epoch}_{best_val_loss}.pth"))
-
         
 
 
