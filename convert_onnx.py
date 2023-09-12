@@ -10,10 +10,13 @@ import onnx
 
 from onnxruntime.quantization import quantize_dynamic, QuantType
 
+from onnxruntime.quantization import quantize
+from onnxruntime.quantization import QuantizationMode
+
 
 # Define input and output names
 input_names = ['input']
-output_names = ['brick_type', 'rotation',  'color']
+output_names = ['brick_type']
 
 # Define the model architecture
 class LegoModel(nn.Module):
@@ -22,8 +25,8 @@ class LegoModel(nn.Module):
 
         self.inference = inference
 
-        # Load ResNet18 pre-trained on ImageNet
-        model = models.resnet18(pretrained=True)
+         # Load resnet34 pre-trained on ImageNet
+        model = models.resnet34(pretrained=True)
 
         self.backbone = nn.Sequential(
             model.conv1, 
@@ -38,11 +41,10 @@ class LegoModel(nn.Module):
         
         # Modify the final layer to handle multiple outputs
         num_features = model.fc.in_features
-
+        
+        
         # Define the new final layers for our multi-output prediction
         self.fc_brick_type = nn.Linear(num_features, num_brick_types)
-        self.fc_rotation = nn.Linear(num_features, 3)
-        self.fc_color = nn.Linear(num_features, 3)
 
 
     def forward(self, x):
@@ -50,15 +52,11 @@ class LegoModel(nn.Module):
         x = x.mean(dim=(2, 3))
 
         brick_type = self.fc_brick_type(x)
-        rotation = self.fc_rotation(x)
-        color = self.fc_color(x)
 
         if self.inference:
             brick_type = torch.softmax(brick_type, dim=1)
-            rotation = torch.sigmoid(rotation)
-            color = torch.sigmoid(color)
 
-        return brick_type, rotation, color
+        return brick_type
 
  
     
@@ -78,7 +76,7 @@ if __name__ == '__main__':
 
     # Initialize the model
     model = LegoModel()
-    modelPath = './ckpt/best_11_334.72284637451173.pth'
+    modelPath = './ckpt/ckpt_30_2.278373882174492.pth'
 
     # Initialize model with the pretrained weights
     model.load_state_dict(torch.load(modelPath, map_location='cpu'))
@@ -86,8 +84,8 @@ if __name__ == '__main__':
     # set the model to inference mode
     model.eval().to(device)
 
-    path = "./data/images/brick_0a0da5e6.png"
-    rgb = np.array(Image.open(path).resize((128, 128), Image.BICUBIC))[..., :3]
+    path = "./data/images/brick_0a1ff1d5.png"
+    rgb = np.array(Image.open(path).resize((256, 256), Image.BICUBIC))[..., :3]
 
     x = torch.from_numpy(rgb).permute(2,0,1)[None].float() / 255.
 
@@ -106,6 +104,3 @@ if __name__ == '__main__':
 	)
 
     quantize_onnx_model("./ckpt/model_best.onnx", "./ckpt/model.quantized.onnx")
-
-
-
