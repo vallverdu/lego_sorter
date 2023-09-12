@@ -3,6 +3,7 @@
 /results/*
 /ckpt/*
 /Lego_sorter_web/node_modules/*
+/Lego_sorter_web/dist/images/*
 *.zip
 *.pth
 *.onnx
