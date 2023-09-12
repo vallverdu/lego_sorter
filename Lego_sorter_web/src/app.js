@@ -161,7 +161,7 @@ async function getModelInference(rgbPath,topk = 3, debug = true) {
             7 : "4*1",
             8 : "2*1_pyramid",
             9 : "2*2",
-            10 : "6*"
+            10 : "6*1"
         }
 
       console.log("sorted gender Result", sortedResult);
@@ -172,7 +172,7 @@ async function getModelInference(rgbPath,topk = 3, debug = true) {
             topKresults.push({id: brick_id_to_name[sortedResult[i][0]], confidence: sortedResult[i][1]})
             if(debug) console.log(`TOP ${i} is ${brick_id_to_name[sortedResult[i][0]]} with confidence ${sortedResult[i][1]}`)
         }
-      printResults(rgbPath, topKresults);
+      printResults(rgbPath, topKresults, [256, 256]);
 
 
     } catch (e) {
@@ -215,7 +215,7 @@ function printResults(url, results, dims) {
 
       ctx.drawImage(img, 0, 0, width, height);
 
-      let resultstext = ``;
+      let resultsLayer = ``;
 
       for (let i = 0; i < results.length; i++) {
         resultsLayer += `${results[i].id} : ${results[i].confidence.toFixed(2)}\n`;
@@ -241,7 +241,8 @@ function printResults(url, results, dims) {
 
       document.getElementById("p_rgb").innerHTML = `
         type : ${results[0].id}<br>
-        confidence : ${results[0].confidence.toFixed(2)}`;
+        confidence : ${results[0].confidence.toFixed(2)}
+        `;
     };
 
     img.onerror = (err) => {
