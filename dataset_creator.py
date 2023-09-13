@@ -142,24 +142,41 @@ def apply_gravity_to_piece(piece):
     return final_rotation
 
 # Define a function to move the lights randomly
-def move_lights_randomly(lights, max_translation=1.0):
+def move_lights_randomly(lights, max_translation=1.0, max_energy= 50, max_color = 0.2):
     original_positions = {}
+    original_light_power = {}
+    original_light_color = {}
     
     for light in lights:
         # Store the original position
         original_positions[light.name] = light.location.copy()
+        original_positions[light.name] = light.location.copy()
+        original_positions[light.name] = light.location.copy()
         
+        original_light_power[light.name] = light.data.energy
+        original_light_color[light.name] = light.data.color.copy()
+
         # Apply random translation
         light.location.x += random.uniform(-max_translation, max_translation)
         light.location.y += random.uniform(-max_translation, max_translation)
         light.location.z += random.uniform(-max_translation, max_translation)
+
+        light.data.energy = original_light_power + random.uniform(-max_energy, max_energy)
+
+        light.data.color = (
+            original_light_color[0] + random.uniform(-max_color, max_color),
+            original_light_color[1] + random.uniform(-max_color, max_color),
+            original_light_color[2] + random.uniform(-max_color, max_color)
+        )
     
-    return original_positions
+    return original_positions, original_light_power, original_light_color
 
 # Define a function to reset the lights to their original positions
-def reset_lights_to_original(lights, original_positions):
+def reset_lights_to_original(lights, original_positions, original_light_power, original_light_color):
     for light in lights:
         light.location = original_positions[light.name]
+        light.data.energy = original_light_power[light.name]
+        light.data.color = original_light_color[light.name]
 
 def create_synthetic_images(output_folder, num_images, csv_filename, engine, debug, visualize):
 
@@ -255,7 +272,7 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine, deb
             # print('final_rotation x: ',piece.rotation_euler.x,' y: ', piece.rotation_euler.y, ' z: ',piece.rotation_euler.z)
             
             # Move the lights randomly
-            original_positions = move_lights_randomly(lights,0.3)
+            original_positions, original_light_power, original_light_color = move_lights_randomly(lights,0.3)
             
             # Change the piece's color
             color = (random.random(), random.random(), random.random(), 1)
