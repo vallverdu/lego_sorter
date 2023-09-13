@@ -25,6 +25,7 @@ import imgaug as ia
 
 import matplotlib.pyplot as plt
 
+from torch.utils.tensorboard import SummaryWriter
 
 # Configuration
 class Config:
@@ -388,6 +389,8 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
+    writer = SummaryWriter(f"runs/{args.experiment}")
+
     # define Device
     device = torch.device(f"cuda:{args.device}" if torch.cuda.is_available() else "cpu")
     
@@ -421,7 +424,7 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=Config.BATCH_SIZE, shuffle=False)
 
     # Initialize the model and define the loss function and optimizer
-    model = LegoModelResnet(inference=False)
+    model = LegoModelUNet(inference=False)
 
     optimizer = optim.Adam(model.parameters(), lr=Config.LR, eps = Config.EPS)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
@@ -449,10 +452,12 @@ if __name__ == "__main__":
         train_loss = train(model, train_loader, optimizer, device, epoch)
         val_loss, total_type_correct = test(model, test_loader, device, epoch)
 
-        # Append losses for plotting
-        train_losses.append(train_loss)
-        val_losses.append(val_loss)
+        writer.add_scalar('Training Loss', train_loss, epoch)
+        writer.add_scalar('Validation Loss', val_loss, epoch)
+        writer.add_scalar('Validation Accuracy', total_type_correct, epoch)
 
+
+        
         # Compute average metrics for the epoch
         epoch_type_accuracy = total_type_correct / len(lego_dataset) * 100
 

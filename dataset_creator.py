@@ -55,11 +55,11 @@ def generate_random_rotation():
     rot_z = random.uniform(0, 360)
 
     # Prioritize x-axis rotations: 0 or 180 degrees
-    rot_x = random.choice([0, 180, 0, 180, 90, 270])  # Higher probability for 0 and 180
+    rot_x = random.choice([0, 180, 0,0,0, 180,0,0, 90, 270])  # Higher probability for 0 and 180
 
     # Y rotations: 0, 90, 180, or 270 degrees but only if rot_x is 0
     if rot_x == 0:
-        rot_y = random.choice([0, 90,0, 180,0, 180, 270,0, 180,0, 180])
+        rot_y = random.choice([0, 0,0,90,0, 180,0,0,0, 180, 270,0, 180,0, 180])
     else:
         rot_y = 0
 
@@ -161,13 +161,11 @@ def move_lights_randomly(lights, max_translation=1.0, max_energy= 50, max_color 
         light.location.y += random.uniform(-max_translation, max_translation)
         light.location.z += random.uniform(-max_translation, max_translation)
 
-        light.data.energy = original_light_power + random.uniform(-max_energy, max_energy)
+        light.data.energy += random.uniform(-max_energy, max_energy)
 
-        light.data.color = (
-            original_light_color[0] + random.uniform(-max_color, max_color),
-            original_light_color[1] + random.uniform(-max_color, max_color),
-            original_light_color[2] + random.uniform(-max_color, max_color)
-        )
+        light.data.color[0] += random.uniform(-max_color, max_color)
+        light.data.color[1] += random.uniform(-max_color, max_color)
+        light.data.color[2] += random.uniform(-max_color, max_color)
     
     return original_positions, original_light_power, original_light_color
 
@@ -189,6 +187,24 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine, deb
     # Set the desired resolution
     bpy.context.scene.render.resolution_x = 256
     bpy.context.scene.render.resolution_y = 256
+
+    # Assuming you're working with the active camera in the scene
+    camera = bpy.context.scene.camera.data
+
+    # Image dimensions
+    image_width = bpy.context.scene.render.resolution_x
+    image_height = bpy.context.scene.render.resolution_y
+
+    # Calculate fx and fy
+    fx = camera.lens * image_width / camera.sensor_width
+    fy = camera.lens * image_height / camera.sensor_height
+
+    # Principal point
+    cx = image_width / 2
+    cy = image_height / 2
+
+    # Print the intrinsics matrix
+    print(f"Intrinsics matrix K:\n[[{fx}, 0, {cx}],\n [0, {fy}, {cy}],\n [0, 0, 1]]")
     
     # Adjust camera's clip start for small objects
     bpy.data.cameras['Camera'].clip_start = 0.001
@@ -197,10 +213,10 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine, deb
     world = bpy.data.worlds["World"]
     world.use_nodes = True
     bg_node = world.node_tree.nodes["Background"]
-    bg_node.inputs["Strength"].default_value = 0.0
+    bg_node.inputs["Strength"].default_value = 0
     
     scene = bpy.context.scene
-    scene.view_settings.exposure = 0.5
+    scene.view_settings.exposure = 0
 
 
     # Create lights
@@ -323,7 +339,7 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine, deb
 
 
             binary_mask = np.where(result["inst"] > 0, 255, 0).astype(np.uint8)
-            cv2.imwrite(os.path.join(output_folder, f"{rgb_filename}_binary_mask.png"), binary_mask)
+            cv2.imwrite(os.path.join(output_folder, f"{rgb_filename}_mask.png"), binary_mask)
 
 
             if debug :
@@ -350,7 +366,7 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine, deb
             piece.scale = original_scale
 
             # Restore the original Light values
-            reset_lights_to_original(lights, original_positions)
+            reset_lights_to_original(lights, original_positions, original_light_power, original_light_color)
             
             hide_children(piece, True)  # hide the piece again after rendering
 
@@ -365,7 +381,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Generate synthetic images in Blender.")
     parser.add_argument("--output_folder",    type=str, default="./dataset/", help="Path to the folder where images will be saved.")
-    parser.add_argument("--num_images",       type=int, default=1, help="Number of synthetic images per category to generate.")
+    parser.add_argument("--num_images",       type=int, default=2, help="Number of synthetic images per category to generate.")
     parser.add_argument("--csv_filename",     type=str, default="./dataset.csv", help="Path to the CSV file to store metadata.")
     parser.add_argument("--engine",           type=str, default="BLENDER_EEVEE", choices=["CYCLES", "BLENDER_EEVEE"], help="Blender rendering engine to use.")
     parser.add_argument('--debug',            action='store_true', help='Set this flag to debug')
@@ -378,7 +394,7 @@ if __name__ == "__main__":
 
 '''
 To execute from terminal
-/Applications/Blender.app/Contents/MacOS/Blender -b lego_bricks_base2.blend -P dataset_creator.py -- --output-folder /path/to/output/folder --num-images 1000 --csv-filename /path/to/output/folder/data.csv --engine CYCLES
+/Applications/Blender.app/Contents/MacOS/Blender -b lego_bricks_base2.blend -P dataset_creator.py -- --debug --visualize --output-folder /path/to/output/folder --num-images 1000 --csv-filename /path/to/output/folder/data.csv --engine CYCLES
 
 Install bpycv
 https://github.com/vallverdu/bpycv

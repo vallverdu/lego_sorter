@@ -1,5 +1,7 @@
 /blender/*
 /data/*
+/data_old/*
+/dataset/*
 /results/*
 /ckpt/*
 /Lego_sorter_web/node_modules/*
