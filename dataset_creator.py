@@ -228,7 +228,19 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine):
             # print(result["inst"])
 
             # print(result["depth"])
-            
+
+            # Visualize the instance image with a colormap
+            # Normalize the instance image for better visualization
+            norm_instance = cv2.normalize(result["inst"], None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+            # Use a colormap to visualize distinct values
+            colored_instance = cv2.applyColorMap(norm_instance, cv2.COLORMAP_JET)
+
+            cv2.imshow('Instance Visualization', colored_instance)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+
+
             cv2.imwrite(
                os.path.join(output_folder, f"{rgb_filename}_rgb1.png"), result["image"][..., ::-1]
             )  # transfer RGB image to opencv's BGR
@@ -274,7 +286,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Generate synthetic images in Blender.")
     parser.add_argument("--output_folder",    type=str, default="./dataset/", help="Path to the folder where images will be saved.")
-    parser.add_argument("--num_images",       type=int, default=3, help="Number of synthetic images to generate.")
+    parser.add_argument("--num_images",       type=int, default=1, help="Number of synthetic images to generate.")
     parser.add_argument("--csv_filename",     type=str, default="./dataset.csv", help="Path to the CSV file to store metadata.")
     parser.add_argument("--engine",           type=str, default="BLENDER_EEVEE", choices=["CYCLES", "BLENDER_EEVEE"], help="Blender rendering engine to use.")
 
