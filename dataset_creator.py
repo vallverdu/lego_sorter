@@ -141,6 +141,26 @@ def apply_gravity_to_piece(piece):
 
     return final_rotation
 
+# Define a function to move the lights randomly
+def move_lights_randomly(lights, max_translation=1.0):
+    original_positions = {}
+    
+    for light in lights:
+        # Store the original position
+        original_positions[light.name] = light.location.copy()
+        
+        # Apply random translation
+        light.location.x += random.uniform(-max_translation, max_translation)
+        light.location.y += random.uniform(-max_translation, max_translation)
+        light.location.z += random.uniform(-max_translation, max_translation)
+    
+    return original_positions
+
+# Define a function to reset the lights to their original positions
+def reset_lights_to_original(lights, original_positions):
+    for light in lights:
+        light.location = original_positions[light.name]
+
 def create_synthetic_images(output_folder, num_images, csv_filename, engine, debug, visualize):
 
     # Set the Engine for rendering
@@ -155,12 +175,36 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine, deb
     
     # Adjust camera's clip start for small objects
     bpy.data.cameras['Camera'].clip_start = 0.001
+
+    # Make the world dark
+    world = bpy.data.worlds["World"]
+    world.use_nodes = True
+    bg_node = world.node_tree.nodes["Background"]
+    bg_node.inputs["Strength"].default_value = 0.0
     
+    scene = bpy.context.scene
+    scene.view_settings.exposure = 0.5
+
+
+    # Create lights
+    locations = [[0,0,5], [0,-2,5], [2,0,5]]
+    lights = []
+
+    for idx, location in enumerate(locations):
+        bpy.ops.object.light_add(type='POINT', align='WORLD', location=location)
+        light = bpy.context.active_object
+        light.name = f"MyPointLight{idx+1}"  # Name the light based on its index
+        light.data.energy = 1000
+        lights.append(light)
+
+    
+
     # Filter out child objects and exclude Camera and Light
     pieces = [obj for obj in bpy.data.objects if obj.parent is None and obj.type == 'MESH' and obj.name not in ['Camera', 'Light']]
 
-    # Initialize the balancer
-    balancer = Balancer(pieces.keys(), num_images)
+    # Create a balancer to ensure a balanced dataset
+    unique_piece_types = list(set(pieces))
+    balancer = Balancer(unique_piece_types, num_images)
 
     for piece in pieces:
         hide_children(piece, True)  # hide all pieces initially for rendering
@@ -210,24 +254,8 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine, deb
             # piece.rotation_euler = apply_gravity_to_piece(piece)
             # print('final_rotation x: ',piece.rotation_euler.x,' y: ', piece.rotation_euler.y, ' z: ',piece.rotation_euler.z)
             
-            # Adjust light values 
-            light = bpy.data.objects['Light']  # Assuming the light source is named 'Light'
-            original_light_location = light.location.copy()
-            original_light_power = light.data.energy
-            original_light_color = light.data.color.copy()
-
-            # Random adjustments for each render:
-            light.location = (
-                original_light_location.x + random.uniform(-0.3, 0.3),
-                original_light_location.y + random.uniform(-0.3, 0.3),
-                original_light_location.z + random.uniform(-0.3, 0.3)
-            )
-            light.data.energy = original_light_power + random.uniform(-50, 50)
-            light.data.color = (
-                original_light_color[0] + random.uniform(-0.1, 0.1),
-                original_light_color[1] + random.uniform(-0.1, 0.1),
-                original_light_color[2] + random.uniform(-0.1, 0.1)
-            )
+            # Move the lights randomly
+            original_positions = move_lights_randomly(lights,0.3)
             
             # Change the piece's color
             color = (random.random(), random.random(), random.random(), 1)
@@ -305,9 +333,7 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine, deb
             piece.scale = original_scale
 
             # Restore the original Light values
-            light.location = original_light_location
-            light.data.energy = original_light_power
-            light.data.color = original_light_color
+            reset_lights_to_original(lights, original_positions)
             
             hide_children(piece, True)  # hide the piece again after rendering
 
@@ -322,7 +348,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Generate synthetic images in Blender.")
     parser.add_argument("--output_folder",    type=str, default="./dataset/", help="Path to the folder where images will be saved.")
-    parser.add_argument("--num_images",       type=int, default=5, help="Number of synthetic images to generate.")
+    parser.add_argument("--num_images",       type=int, default=1, help="Number of synthetic images per category to generate.")
     parser.add_argument("--csv_filename",     type=str, default="./dataset.csv", help="Path to the CSV file to store metadata.")
     parser.add_argument("--engine",           type=str, default="BLENDER_EEVEE", choices=["CYCLES", "BLENDER_EEVEE"], help="Blender rendering engine to use.")
     parser.add_argument('--debug',            action='store_true', help='Set this flag to debug')
@@ -335,7 +361,7 @@ if __name__ == "__main__":
 
 '''
 To execute from terminal
-/Applications/Blender.app/Contents/MacOS/Blender -b lego_bricks_base1.blend -P dataset_creator.py -- --output-folder /path/to/output/folder --num-images 1000 --csv-filename /path/to/output/folder/data.csv --engine CYCLES
+/Applications/Blender.app/Contents/MacOS/Blender -b lego_bricks_base2.blend -P dataset_creator.py -- --output-folder /path/to/output/folder --num-images 1000 --csv-filename /path/to/output/folder/data.csv --engine CYCLES
 
 Install bpycv
 https://github.com/vallverdu/bpycv

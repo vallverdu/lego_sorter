@@ -157,10 +157,83 @@ class EarlyStopping:
 
 # The sections for Model, Training, and Evaluation will be added next...
 
+
+class LegoModelUNet(nn.Module):
+    def __init__(self, in_channels, num_classes):
+        super(LegoModelUNet, self).__init__()
+        
+        # Contracting Path
+        self.enc1 = self.conv_block(in_channels, 64)
+        self.enc2 = self.conv_block(64, 128)
+        self.enc3 = self.conv_block(128, 256)
+        self.enc4 = self.conv_block(256, 512)
+        
+        # Bottleneck
+        self.bottleneck = self.conv_block(512, 1024)
+        
+        # Expansive Path
+        self.upconv4 = self.upconv_block(1024, 512)
+        self.upconv3 = self.upconv_block(512, 256)
+        self.upconv2 = self.upconv_block(256, 128)
+        self.upconv1 = self.upconv_block(128, 64)
+        
+        # Segmentation head
+        self.segmentation_head = nn.Conv2d(64, num_classes, kernel_size=1)
+        
+        # Classification head
+        self.global_avg_pooling = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc1 = nn.Linear(1024, 512)
+        self.fc2 = nn.Linear(512, num_classes)
+        
+    def conv_block(self, in_channels, out_channels):
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+        )
+    
+    def upconv_block(self, in_channels, out_channels):
+        return nn.Sequential(
+            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        # Contracting Path
+        e1 = self.enc1(x)
+        e2 = self.enc2(F.max_pool2d(e1, 2))
+        e3 = self.enc3(F.max_pool2d(e2, 2))
+        e4 = self.enc4(F.max_pool2d(e3, 2))
+        
+        # Bottleneck
+        b = self.bottleneck(F.max_pool2d(e4, 2))
+        
+        # Expansive Path
+        d4 = self.upconv4(b)
+        d3 = self.upconv3(d4 + e4)
+        d2 = self.upconv2(d3 + e3)
+        d1 = self.upconv1(d2 + e2)
+        
+        # Segmentation head
+        seg_output = self.segmentation_head(d1 + e1)
+        
+        # Classification head
+        avg_pool = self.global_avg_pooling(b).view(b.size(0), -1)
+        fc1 = F.relu(self.fc1(avg_pool))
+        class_output = F.softmax(self.fc2(fc1), dim=1)
+        
+        return seg_output, class_output
+
+
+
 # ResNet 34 Finetune Model
-class LegoModel(nn.Module):
+class LegoModelResnet(nn.Module):
     def __init__(self, num_brick_types = 11, inference = True):
-        super(LegoModel, self).__init__()
+        super(LegoModelResnet, self).__init__()
 
         self.inference = inference
 
@@ -348,7 +421,7 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=Config.BATCH_SIZE, shuffle=False)
 
     # Initialize the model and define the loss function and optimizer
-    model = LegoModel(inference=False)
+    model = LegoModelResnet(inference=False)
 
     optimizer = optim.Adam(model.parameters(), lr=Config.LR, eps = Config.EPS)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
@@ -437,72 +510,3 @@ if __name__ == "__main__":
 
 
 
-class UNet(nn.Module):
-    def __init__(self, in_channels, num_classes):
-        super(UNet, self).__init__()
-        
-        # Contracting Path
-        self.enc1 = self.conv_block(in_channels, 64)
-        self.enc2 = self.conv_block(64, 128)
-        self.enc3 = self.conv_block(128, 256)
-        self.enc4 = self.conv_block(256, 512)
-        
-        # Bottleneck
-        self.bottleneck = self.conv_block(512, 1024)
-        
-        # Expansive Path
-        self.upconv4 = self.upconv_block(1024, 512)
-        self.upconv3 = self.upconv_block(512, 256)
-        self.upconv2 = self.upconv_block(256, 128)
-        self.upconv1 = self.upconv_block(128, 64)
-        
-        # Segmentation head
-        self.segmentation_head = nn.Conv2d(64, num_classes, kernel_size=1)
-        
-        # Classification head
-        self.global_avg_pooling = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc1 = nn.Linear(1024, 512)
-        self.fc2 = nn.Linear(512, num_classes)
-        
-    def conv_block(self, in_channels, out_channels):
-        return nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-        )
-    
-    def upconv_block(self, in_channels, out_channels):
-        return nn.Sequential(
-            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
-        )
-
-    def forward(self, x):
-        # Contracting Path
-        e1 = self.enc1(x)
-        e2 = self.enc2(F.max_pool2d(e1, 2))
-        e3 = self.enc3(F.max_pool2d(e2, 2))
-        e4 = self.enc4(F.max_pool2d(e3, 2))
-        
-        # Bottleneck
-        b = self.bottleneck(F.max_pool2d(e4, 2))
-        
-        # Expansive Path
-        d4 = self.upconv4(b)
-        d3 = self.upconv3(d4 + e4)
-        d2 = self.upconv2(d3 + e3)
-        d1 = self.upconv1(d2 + e2)
-        
-        # Segmentation head
-        seg_output = self.segmentation_head(d1 + e1)
-        
-        # Classification head
-        avg_pool = self.global_avg_pooling(b).view(b.size(0), -1)
-        fc1 = F.relu(self.fc1(avg_pool))
-        class_output = F.softmax(self.fc2(fc1), dim=1)
-        
-        return seg_output, class_output
