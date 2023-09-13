@@ -122,7 +122,7 @@ def apply_gravity_to_piece(piece):
 
     return final_rotation
 
-def create_synthetic_images(output_folder, num_images, csv_filename, engine):
+def create_synthetic_images(output_folder, num_images, csv_filename, engine, debug, visualize):
 
     # Set the Engine for rendering
     bpy.context.scene.render.engine = engine
@@ -208,20 +208,20 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine):
                 principled = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
                 principled.inputs[0].default_value = color  # Base Color
                 
-            original_scales = piece.scale.copy()  # Store the original scale
+            original_scale = piece.scale.copy()  # Store the original scale
             piece.scale *= 10  # Scale the object
 
             # Render the RGB 
             # Generate a short UUID for filename
             short_uuid = str(uuid.uuid4())[:8]
             rgb_filename = f"brick_{short_uuid}"
-            bpy.context.scene.render.filepath = os.path.join(output_folder, f"{rgb_filename}_rgb.png")
-            bpy.ops.render.render(write_still=True)
+            # bpy.context.scene.render.filepath = os.path.join(output_folder, f"{rgb_filename}_rgb.png")
+            # bpy.ops.render.render(write_still=True)
 
             # Render the instance segmentation and convert it to a binary mask
             mask_filename = f"mask_{short_uuid}"
             
-            piece["inst_id"] = i*1000
+            piece["inst_id"] = 2 * 1000 + i
 
             result = bpycv.render_data()
 
@@ -229,45 +229,51 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine):
 
             # print(result["depth"])
 
-            # Visualize the instance image with a colormap
-            # Normalize the instance image for better visualization
-            norm_instance = cv2.normalize(result["inst"], None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+            if visualize :
+                # Visualize the instance image with a colormap
+                # Normalize the instance image for better visualization
+                norm_instance = cv2.normalize(result["inst"], None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
-            # Use a colormap to visualize distinct values
-            colored_instance = cv2.applyColorMap(norm_instance, cv2.COLORMAP_JET)
+                # Use a colormap to visualize distinct values
+                colored_instance = cv2.applyColorMap(norm_instance, cv2.COLORMAP_JET)
 
-            cv2.imshow('Instance Visualization', colored_instance)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
+                cv2.imshow('Instance Visualization', colored_instance)
+                cv2.waitKey(0)
+                cv2.destroyAllWindows()
 
 
             cv2.imwrite(
-               os.path.join(output_folder, f"{rgb_filename}_rgb1.png"), result["image"][..., ::-1]
+               os.path.join(output_folder, f"{rgb_filename}_rgb.png"), result["image"][..., ::-1]
             )  # transfer RGB image to opencv's BGR
 
-            # save instance map as 16 bit png
-            cv2.imwrite(os.path.join(output_folder, f"{rgb_filename}_inst.png"), np.uint16(result["inst"]))
-            # the value of each pixel represents the inst_id of the object
 
-            # convert depth units from meters to millimeters
-            depth_in_mm = result["depth"] * 10000
-            cv2.imwrite(os.path.join(output_folder, f"{rgb_filename}_depth.png"), np.uint16(depth_in_mm))  # save as 16bit png
+            binary_mask = np.where(result["inst"] > 0, 255, 0).astype(np.uint8)
+            cv2.imwrite(os.path.join(output_folder, f"{rgb_filename}_binary_mask.png"), binary_mask)
 
-            # visualization instance mask, RGB, depth for human
-            cv2.imwrite(os.path.join(output_folder, f"{rgb_filename}_vis.jpg"), result.vis()[..., ::-1])
 
-            # seg = render_segmentation()
-            # mask = (seg.instances == seg.object_to_instid[piece]).astype(np.uint8) * 255
-            # mask_img = object_to_img(mask)
-            # mask_img.save(os.path.join(output_folder, f"{mask_filename}.png"))
+            if debug :
+
+                # save instance map as 16 bit png
+                cv2.imwrite(os.path.join(output_folder, f"{rgb_filename}_inst.png"), np.uint16(result["inst"]))
+                # the value of each pixel represents the inst_id of the object
+
+                # convert depth units from meters to millimeters
+                depth_in_mm = result["depth"] * 10000
+                cv2.imwrite(os.path.join(output_folder, f"{rgb_filename}_depth.png"), np.uint16(depth_in_mm))  # save as 16bit png
+
+                # visualization instance mask, RGB, depth for human
+                cv2.imwrite(os.path.join(output_folder, f"{rgb_filename}_vis.jpg"), result.vis()[..., ::-1])
+
+           
 
             csvwriter.writerow([rgb_filename, piece.name, piece.rotation_euler.x, piece.rotation_euler.y, piece.rotation_euler.z, color[0], color[1], color[2]])
 
 
-            # Restore the original rotation and location
+            # Restore the original rotation, location & scale
             piece.rotation_euler = original_rotation
             piece.location = original_location
-            
+            piece.scale = original_scale
+
             # Restore the original Light values
             light.location = original_light_location
             light.data.energy = original_light_power
@@ -286,13 +292,15 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Generate synthetic images in Blender.")
     parser.add_argument("--output_folder",    type=str, default="./dataset/", help="Path to the folder where images will be saved.")
-    parser.add_argument("--num_images",       type=int, default=1, help="Number of synthetic images to generate.")
+    parser.add_argument("--num_images",       type=int, default=7, help="Number of synthetic images to generate.")
     parser.add_argument("--csv_filename",     type=str, default="./dataset.csv", help="Path to the CSV file to store metadata.")
     parser.add_argument("--engine",           type=str, default="BLENDER_EEVEE", choices=["CYCLES", "BLENDER_EEVEE"], help="Blender rendering engine to use.")
+    parser.add_argument('--debug',            action='store_true', help='Set this flag to debug')
+    parser.add_argument('--visualize',        action='store_true', help='Set this flag to visualize')
 
     args = parser.parse_args(argv)
 
-    create_synthetic_images(args.output_folder, args.num_images, args.csv_filename, args.engine)
+    create_synthetic_images(args.output_folder, args.num_images, args.csv_filename, args.engine,args.debug, args.visualize)
 
 
 '''
