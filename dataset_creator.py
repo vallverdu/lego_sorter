@@ -1,4 +1,9 @@
 import bpy
+# from bpycv import render_segmentation, object_to_img
+# from bpycv.transform_utils import resize, random_scale, random_translation, random_rotation
+import bpycv
+import cv2
+
 import random
 import os
 import math
@@ -9,6 +14,7 @@ import uuid
 
 import argparse
 import sys
+
 
 
 def hide_children(obj, hide_status):
@@ -202,13 +208,46 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine):
                 principled = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
                 principled.inputs[0].default_value = color  # Base Color
                 
-            # Render the brick 
+            original_scales = piece.scale.copy()  # Store the original scale
+            piece.scale *= 10  # Scale the object
+
+            # Render the RGB 
             # Generate a short UUID for filename
             short_uuid = str(uuid.uuid4())[:8]
             rgb_filename = f"brick_{short_uuid}"
-            bpy.context.scene.render.filepath = os.path.join(output_folder, f"{rgb_filename}.png")
+            bpy.context.scene.render.filepath = os.path.join(output_folder, f"{rgb_filename}_rgb.png")
             bpy.ops.render.render(write_still=True)
 
+            # Render the instance segmentation and convert it to a binary mask
+            mask_filename = f"mask_{short_uuid}"
+            
+            piece["inst_id"] = i*1000
+
+            result = bpycv.render_data()
+
+            # print(result["inst"])
+
+            # print(result["depth"])
+            
+            cv2.imwrite(
+               os.path.join(output_folder, f"{rgb_filename}_rgb1.png"), result["image"][..., ::-1]
+            )  # transfer RGB image to opencv's BGR
+
+            # save instance map as 16 bit png
+            cv2.imwrite(os.path.join(output_folder, f"{rgb_filename}_inst.png"), np.uint16(result["inst"]))
+            # the value of each pixel represents the inst_id of the object
+
+            # convert depth units from meters to millimeters
+            depth_in_mm = result["depth"] * 10000
+            cv2.imwrite(os.path.join(output_folder, f"{rgb_filename}_depth.png"), np.uint16(depth_in_mm))  # save as 16bit png
+
+            # visualization instance mask, RGB, depth for human
+            cv2.imwrite(os.path.join(output_folder, f"{rgb_filename}_vis.jpg"), result.vis()[..., ::-1])
+
+            # seg = render_segmentation()
+            # mask = (seg.instances == seg.object_to_instid[piece]).astype(np.uint8) * 255
+            # mask_img = object_to_img(mask)
+            # mask_img.save(os.path.join(output_folder, f"{mask_filename}.png"))
 
             csvwriter.writerow([rgb_filename, piece.name, piece.rotation_euler.x, piece.rotation_euler.y, piece.rotation_euler.z, color[0], color[1], color[2]])
 
@@ -235,7 +274,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Generate synthetic images in Blender.")
     parser.add_argument("--output_folder",    type=str, default="./dataset/", help="Path to the folder where images will be saved.")
-    parser.add_argument("--num_images",       type=int, default=10000, help="Number of synthetic images to generate.")
+    parser.add_argument("--num_images",       type=int, default=3, help="Number of synthetic images to generate.")
     parser.add_argument("--csv_filename",     type=str, default="./dataset.csv", help="Path to the CSV file to store metadata.")
     parser.add_argument("--engine",           type=str, default="BLENDER_EEVEE", choices=["CYCLES", "BLENDER_EEVEE"], help="Blender rendering engine to use.")
 
@@ -247,4 +286,17 @@ if __name__ == "__main__":
 '''
 To execute from terminal
 /Applications/Blender.app/Contents/MacOS/Blender -b lego_bricks_base1.blend -P dataset_creator.py -- --output-folder /path/to/output/folder --num-images 1000 --csv-filename /path/to/output/folder/data.csv --engine CYCLES
+
+Install bpycv
+https://github.com/vallverdu/bpycv
+
+# Ensure pip: equl to /blender-path/3.xx/python/bin/python3.10 -m ensurepip
+/Applications/Blender.app/Contents/MacOS/Blender -b --python-expr "from subprocess import sys,call;call([sys.executable,'-m','ensurepip'])"
+# Update pip toolchain
+/Applications/Blender.app/Contents/MacOS/Blender -b --python-expr "from subprocess import sys,call;call([sys.executable]+'-m pip install -U pip setuptools wheel'.split())"
+# pip install bpycv
+/Applications/Blender.app/Contents/MacOS/Blender -b --python-expr "from subprocess import sys,call;call([sys.executable]+'-m pip install -U bpycv'.split())"
+# Check bpycv ready
+/Applications/Blender.app/Contents/MacOS/Blender -b -E CYCLES --python-expr "import bpycv,cv2;d=bpycv.render_data();bpycv.tree(d);cv2.imwrite('/tmp/try_bpycv_vis(inst-rgb-depth).jpg', d.vis()[...,::-1])"
+
 '''
