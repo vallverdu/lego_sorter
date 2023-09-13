@@ -16,6 +16,23 @@ import argparse
 import sys
 
 
+class Balancer:
+    def __init__(self, categories, desired_samples_per_category):
+        self.categories = categories
+        self.desired_samples_per_category = desired_samples_per_category
+        self.current_samples = {category: 0 for category in categories}
+
+    def get_next_category(self):
+        # Return the category that has the least samples
+        return min(self.current_samples, key=self.current_samples.get)
+
+    def update_category(self, category):
+        if category in self.current_samples:
+            self.current_samples[category] += 1
+
+    def is_balanced(self):
+        # Check if the dataset is balanced
+        return all(count == self.desired_samples_per_category for count in self.current_samples.values())
 
 def hide_children(obj, hide_status):
     """Recursively hide an object and all of its children."""
@@ -140,6 +157,9 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine, deb
     # Filter out child objects and exclude Camera and Light
     pieces = [obj for obj in bpy.data.objects if obj.parent is None and obj.type == 'MESH' and obj.name not in ['Camera', 'Light']]
 
+    # Initialize the balancer
+    balancer = Balancer(pieces.keys(), num_images)
+
     for piece in pieces:
         hide_children(piece, True)  # hide all pieces initially for rendering
     
@@ -149,12 +169,20 @@ def create_synthetic_images(output_folder, num_images, csv_filename, engine, deb
         # Write header
         csvwriter.writerow(["filename", "brick_type", "rotation_x", "rotation_y", "rotation_z", "color_r", "color_g", "color_b"])
 
+        for i in range(num_images * len(pieces)):
 
-        for i in range(num_images):
             # Randomly select a piece model (from objects without parents)
-            piece = random.choice(pieces)
+            # piece = random.choice(pieces)
+
+            # Decide the next category using the balancer
+            piece = balancer.get_next_category()
+
+            # Update balancer after rendering the piece
+            balancer.update_category(piece)
+
             hide_children(piece, False)  # unhide the selected piece for rendering
-            
+
+
             # Store the original rotation and location
             original_rotation = piece.rotation_euler.copy()
             original_location = piece.location.copy()
@@ -292,7 +320,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Generate synthetic images in Blender.")
     parser.add_argument("--output_folder",    type=str, default="./dataset/", help="Path to the folder where images will be saved.")
-    parser.add_argument("--num_images",       type=int, default=7, help="Number of synthetic images to generate.")
+    parser.add_argument("--num_images",       type=int, default=5, help="Number of synthetic images to generate.")
     parser.add_argument("--csv_filename",     type=str, default="./dataset.csv", help="Path to the CSV file to store metadata.")
     parser.add_argument("--engine",           type=str, default="BLENDER_EEVEE", choices=["CYCLES", "BLENDER_EEVEE"], help="Blender rendering engine to use.")
     parser.add_argument('--debug',            action='store_true', help='Set this flag to debug')
