@@ -43,24 +43,26 @@ def hide_children(obj, hide_status):
 
 def generate_random_rotation():
     '''
-    Either rot_x or rot_y will be applied, but not both.
-    The chosen one can take the values 0, 90, 180, or 270 degrees.
+    rot_x will have a high chance of being 0 or 180.
+    rot_y can take the values 0, 90, 180, or 270 degrees but only if rot_x is 0.
     rot_z is always applied and can take any value between 0 and 360 degrees.
+    
+    
+    Modifying the generate_random_rotation function to prioritize rotations on x axis as 0 or 180
     '''
 
     # Z-axis rotation: any value between 0 and 360 degrees
     rot_z = random.uniform(0, 360)
 
-    # X and Y rotations: 0, 90, 180, or 270 degrees
-    possible_rotations = [0, 90, 180, 270]
+    # Prioritize x-axis rotations: 0 or 180 degrees
+    rot_x = random.choice([0, 180, 0, 180, 90, 270])  # Higher probability for 0 and 180
 
-    # Randomly choose to rotate on x-axis or y-axis
-    if random.choice(['x', 'y']) == 'x':
-        rot_x = random.choice(possible_rotations)
-        rot_y = 0  # No rotation on y-axis
+    # Y rotations: 0, 90, 180, or 270 degrees but only if rot_x is 0
+    if rot_x == 0:
+        rot_y = random.choice([0, 90,0, 180,0, 180, 270,0, 180,0, 180])
     else:
-        rot_y = random.choice(possible_rotations)
-        rot_x = 0  # No rotation on x-axis
+        rot_y = 0
+
 
     return rot_x, rot_y, rot_z
 
