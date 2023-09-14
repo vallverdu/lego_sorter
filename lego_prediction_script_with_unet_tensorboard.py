@@ -89,7 +89,7 @@ class LegoDataset(Dataset):
             iaa.GaussianBlur((0, 3.0)),
             iaa.CoarseDropout((0.03, 0.15), size_percent=(0.02, 0.05), per_channel=0.2),
             iaa.AdditiveGaussianNoise(loc=0, scale=(0.0, 0.05*255), per_channel=0.5),
-            iaa.ContrastNormalization((0.75, 1.5)),
+            iaa.LinearContrast((0.75, 1.5)),
             iaa.Multiply((0.8, 1.2), per_channel=0.2),
             iaa.AddToHueAndSaturation((-20, 20))
         ])
@@ -209,9 +209,6 @@ class LegoModelUNet(nn.Module):
         self.upconv1 = self.upconv_block(128, 64)
         
         # Segmentation head
-        # self.segmentation_head = nn.Conv2d(64, num_classes, kernel_size=1)
-        # self.segmentation_head = nn.Conv2d(64, 1, kernel_size=1)
-
         self.segmentation_head = nn.Sequential(
             nn.Conv2d(64, 1, kernel_size=1),
             nn.Sigmoid()

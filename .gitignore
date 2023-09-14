@@ -4,6 +4,7 @@
 /dataset/*
 /results/*
 /ckpt/*
+/runs/*
 /Lego_sorter_web/node_modules/*
 /Lego_sorter_web/dist/images/*
 *.zip
