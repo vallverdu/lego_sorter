@@ -52,10 +52,11 @@ class Config:
 # Define the dataset class
 class LegoDataset(Dataset):
 
-    def __init__(self, csv_file, root_dir, transform=None, do_aug=False, augmentation_factor=1):
+    def __init__(self, csv_file, root_dir, rgb_transform=None,mask_transform=None, do_aug=False, augmentation_factor=1):
         self.data = pd.read_csv(os.path.join(root_dir,csv_file))
         self.root_dir = root_dir
-        self.transform = transform
+        self.rgb_transform = rgb_transform
+        self.mask_transform = mask_transform
         self.do_aug = do_aug
         self.brick_type_dict = {
                         '6*2': 0,
@@ -70,10 +71,19 @@ class LegoDataset(Dataset):
                         '2*2': 9,
                         '6*1': 10
                     }
+        
         self.seq_train = iaa.Sequential([
             iaa.CropAndPad(percent=(0, 0.1)),
             iaa.Affine(rotate=(-20, 20)),
             iaa.Resize({"height": Config.IMAGE_RESIZE, "width": Config.IMAGE_RESIZE}),
+            iaa.Affine(shear=(-15, 15)),
+            iaa.Affine(translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)}),
+            iaa.Affine(scale={"x": (0.8, 1.2), "y": (0.8, 1.2)}),
+            iaa.Flipud(0.3),
+            iaa.Fliplr(0.3)
+        ])
+
+        self.seq_color = iaa.Sequential([
             iaa.MultiplyAndAddToBrightness(mul=(0.5, 1.5), add=(-30, 30)),
             iaa.GammaContrast((0.5, 2.0), per_channel=True),
             iaa.GaussianBlur((0, 3.0)),
@@ -81,14 +91,10 @@ class LegoDataset(Dataset):
             iaa.AdditiveGaussianNoise(loc=0, scale=(0.0, 0.05*255), per_channel=0.5),
             iaa.ContrastNormalization((0.75, 1.5)),
             iaa.Multiply((0.8, 1.2), per_channel=0.2),
-            iaa.AddToHueAndSaturation((-20, 20)),
-            iaa.Affine(shear=(-15, 15)),
-            iaa.Affine(translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)}),
-            iaa.Affine(scale={"x": (0.8, 1.2), "y": (0.8, 1.2)}),
-            iaa.Flipud(0.3),
-            iaa.Fliplr(0.3),
-            iaa.Dropout((0.01, 0.1), per_channel=0.5)
+            iaa.AddToHueAndSaturation((-20, 20))
         ])
+        
+    
 
         self.seq_test = iaa.Sequential([
             iaa.Resize({"height": Config.IMAGE_RESIZE, "width": Config.IMAGE_RESIZE})
@@ -113,10 +119,10 @@ class LegoDataset(Dataset):
         # Load the binary mask for each image
         mask_path = os.path.join(self.root_dir, 'images', f"{brick_name}_mask.png")
         mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)  # Load as grayscale
+        mask = mask[..., np.newaxis]  # Add an extra channel dimension at the end
         mask = mask / 255.  # Normalize to [0, 1]
 
-        # Convert to torch tensor
-        mask = torch.tensor(mask).unsqueeze(0).float()  # Add channel dimension
+        
 
         # Extract target variables
         brick_type = self.brick_type_dict[sample['brick_type']]
@@ -124,19 +130,29 @@ class LegoDataset(Dataset):
        
         # Apply augmentations
         if self.do_aug:
-            image = self.seq_train(image=image)
+            # Augment both image and mask
+            augmentations = self.seq_train.to_deterministic()  # Ensures both image and mask undergo the same augmentations
+            image = augmentations.augment_image(image)
+            mask = (augmentations.augment_image(mask) > 0.5).astype(np.uint8) #  Ensures that after the spatial augmentations, mask remains strictly binary
+
+            # Apply color-related augmentations only to the image
+            image = self.seq_color.augment_image(image)
         else :
             image = self.seq_test(image=image)
+            mask = self.seq_test(image=mask)
         
         image = Image.fromarray(image)
+        mask = Image.fromarray((mask.squeeze() * 255).astype(np.uint8))
 
-        if self.transform:
-            image = self.transform(image)
+        if self.rgb_transform:
+            image = self.rgb_transform(image)
+        
+        if self.mask_transform:
+            mask = self.mask_transform(mask)
         
         return (
             image,
-            mask,yes
-            
+            mask,
             torch.tensor(brick_type).long()
         )
 
@@ -170,11 +186,13 @@ class EarlyStopping:
 
 # The sections for Model, Training, and Evaluation will be added next...
 
-
+#  UNet architecture for segmentation
 class LegoModelUNet(nn.Module):
-    def __init__(self, in_channels, num_classes):
+    def __init__(self, in_channels, num_classes = 11, inference = True):
         super(LegoModelUNet, self).__init__()
         
+        self.inference = inference
+
         # Contracting Path
         self.enc1 = self.conv_block(in_channels, 64)
         self.enc2 = self.conv_block(64, 128)
@@ -191,7 +209,14 @@ class LegoModelUNet(nn.Module):
         self.upconv1 = self.upconv_block(128, 64)
         
         # Segmentation head
-        self.segmentation_head = nn.Conv2d(64, num_classes, kernel_size=1)
+        # self.segmentation_head = nn.Conv2d(64, num_classes, kernel_size=1)
+        # self.segmentation_head = nn.Conv2d(64, 1, kernel_size=1)
+
+        self.segmentation_head = nn.Sequential(
+            nn.Conv2d(64, 1, kernel_size=1),
+            nn.Sigmoid()
+        )
+
         
         # Classification head
         self.global_avg_pooling = nn.AdaptiveAvgPool2d((1, 1))
@@ -242,7 +267,6 @@ class LegoModelUNet(nn.Module):
         return seg_output, class_output
 
 
-
 # ResNet 34 Finetune Model
 class LegoModelResnet(nn.Module):
     def __init__(self, num_brick_types = 11, inference = True):
@@ -291,6 +315,40 @@ class LegoModelResnet(nn.Module):
 
 
 # Training and Evaluation Functions
+def visualizeDataset(csv_file,root_dir,rgb_transform,mask_transform,do_aug,augmentation_factor) :
+    # Load the dataset
+    dataset = LegoDataset('data.csv', './data', rgb_transform=rgb_transform, mask_transform = mask_transform, do_aug=do_aug, augmentation_factor=augmentation_factor)
+
+    # Define the inverse normalization function
+    inv_normalize = transforms.Normalize(
+                        mean = [ -0.485/0.229, -0.456/0.224, -0.406/0.225 ],
+                        std = [ 1/0.229, 1/0.224, 1/0.225 ])
+    
+      
+    # Randomly select some samples
+    indices = np.random.choice(len(dataset), 5)
+
+    for index in indices:
+
+        image, mask, _ = dataset[index]
+
+        # Convert tensors to numpy arrays for visualization
+        if isinstance(image, torch.Tensor):
+            image = inv_normalize(image)  # Apply the inverse normalization
+            image = image.permute(1, 2, 0).numpy()
+        if isinstance(mask, torch.Tensor):
+            mask = mask.squeeze().numpy()
+
+        # Check the min and max of the image
+        print(f"Image min: {image.min()}, max: {image.max()}")
+
+        fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+        axes[0].imshow(image)
+        axes[0].set_title("RGB Image")
+        axes[1].imshow(mask, cmap='gray')
+        axes[1].set_title("Mask")
+        plt.show()
+
 
 def train(model, data_loader, optimizer, device, epoch):
 
@@ -300,27 +358,42 @@ def train(model, data_loader, optimizer, device, epoch):
     model.train()
 
     train_loss = 0.0
+    train_iou = 0.0
     
     pbar = tqdm(data_loader)
 
     for batch_idx, (
         image,
+        mask,
         brick_type
     ) in enumerate(pbar, 0):
         
         image = image.to(device)
+        mask = mask.to(device)
         brick_type = brick_type.to(device)
         
         # Optimizer zero
         optimizer.zero_grad()
         
         # Model inference
-        out_brick_type = model(image)
+        out_mask, out_brick_type = model(image)
         
-        # Calculate loss
-        loss = criterion_brick_type(out_brick_type, brick_type)
-        
+        # mask = mask.unsqueeze(1)
+        print('0',out_mask.shape)
 
+        if len(mask.shape) == 5:
+            mask = mask.squeeze(2).squeeze(3)
+            print('1',out_mask.shape)
+
+        # Calculate loss
+        loss_brick = criterion_brick_type(out_brick_type, brick_type)
+        loss_mask = F.binary_cross_entropy(out_mask, mask)   # BCE loss for segmentation
+        
+        # Combine the losses
+        loss = loss_brick + loss_mask
+
+        # Compute IoU
+        iou = compute_iou(out_mask, mask)
 
         # Backward pass and optimization
         loss.backward()
@@ -329,11 +402,12 @@ def train(model, data_loader, optimizer, device, epoch):
         optimizer.step()
 
         train_loss += loss.item()
+        train_iou += iou
         
     avg_loss = train_loss / len(data_loader)
+    avg_iou = train_iou / len(data_loader)
 
-    # return avg_loss, loss_brick_type, loss_rotation, loss_color
-    return avg_loss
+    return avg_loss, avg_iou
 
 def test(model, data_loader, device, epoch):
 
@@ -344,6 +418,7 @@ def test(model, data_loader, device, epoch):
 
     test_loss_brick_type = 0.0
     test_loss = 0.0
+    test_iou = 0.0
     
     # Initialize accumulators
     total_type_correct = 0
@@ -355,39 +430,69 @@ def test(model, data_loader, device, epoch):
 
         for batch_idx, (
             image,
+            mask,
             brick_type
         ) in enumerate(pbar, 0):
             
             image = image.to(device)
+            mask = mask.to(device)
             brick_type = brick_type.to(device)
        
             # Forward pass
-            out_brick_type = model(image)
+            out_mask, out_brick_type = model(image)
 
-            # Calculate loss
+           # Calculate loss
             loss_brick = criterion_brick_type(out_brick_type, brick_type)
-            loss = loss_brick
+            loss_mask = F.binary_cross_entropy(out_mask, mask)   # BCE loss for segmentation
+            
+            # Combine the losses
+            loss = loss_brick + loss_mask
+
+            # Compute IoU
+            iou = compute_iou(out_mask, mask)
 
             pbar.set_description(f"TEST loss={float(loss)}")
 
             
             test_loss += loss.item()
-
+            test_iou += iou
             
-            # Gender accuracy
+            # Brick accuracy
             type_correct = (torch.argmax(out_brick_type, dim=1) == brick_type).float().sum()
             total_type_correct += type_correct
 
      
     avg_loss = test_loss / len(data_loader)
+    avg_iou = test_iou / len(data_loader)
 
     # return avg_loss, loss_brick, loss_rotation, loss_color, type_correct
-    return avg_loss, type_correct
+    return avg_loss, avg_iou, type_correct
 
 def criterion_values(pred, true):
     return F.mse_loss(torch.sigmoid(pred), true)
   
 criterion_brick_type = nn.CrossEntropyLoss()
+
+
+def compute_iou(pred_mask, true_mask):
+    # True Positive: Predicted = 1, Ground Truth = 1
+    intersection = (pred_mask * true_mask).float().sum()
+    
+    # True Positive + False Positive + False Negative
+    union = pred_mask.float().sum() + true_mask.float().sum() - intersection
+
+    iou = intersection / union
+    return iou.item()
+
+# Define the data transformations
+rgb_transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
+
+mask_transform = transforms.Compose([
+    transforms.ToTensor(),
+])
 
 # Main Execution
 if __name__ == "__main__":
@@ -396,7 +501,14 @@ if __name__ == "__main__":
     parser.add_argument('-e', '--experiment', type=str, help='Name of the experiment', required=True)
     parser.add_argument('-d', '--device', type=str, help='Device for the training', default=0)
     parser.add_argument('-s', '--seed', type=int, help='Seed for the training', default=108)
+    parser.add_argument('--debug',      action='store_true', help='Set this flag to debug')
+
     args = parser.parse_args()
+
+
+    if args.debug :
+       visualizeDataset('data.csv', './data', rgb_transform=rgb_transform, mask_transform = mask_transform, do_aug=True, augmentation_factor=Config.AUGMENTATION_FACTOR)
+
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -418,14 +530,10 @@ if __name__ == "__main__":
     CHECKPOINTS_FOLDER = os.path.join(OUTPUT_FOLDER, 'checkpoints')
     os.makedirs(CHECKPOINTS_FOLDER, exist_ok=True)
 
-    # Define the data transformations
-    data_transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
+    
 
     # Define the dataset and data loader
-    lego_dataset = LegoDataset('data.csv', './data', transform=data_transform)
+    lego_dataset = LegoDataset('data.csv', './data', rgb_transform=rgb_transform, mask_transform = mask_transform, do_aug=True, augmentation_factor=Config.AUGMENTATION_FACTOR)
     train_size = int(Config.TRAIN_SPLIT * len(lego_dataset))
     test_size = len(lego_dataset) - train_size
     print('train_size',train_size)
@@ -436,7 +544,7 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=Config.BATCH_SIZE, shuffle=False)
 
     # Initialize the model and define the loss function and optimizer
-    model = LegoModelUNet(inference=False)
+    model = LegoModelUNet(in_channels=3, inference=False)
 
     optimizer = optim.Adam(model.parameters(), lr=Config.LR, eps = Config.EPS)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
@@ -461,11 +569,13 @@ if __name__ == "__main__":
     for epoch in range(Config.EPOCHS):
         
         
-        train_loss = train(model, train_loader, optimizer, device, epoch)
-        val_loss, total_type_correct = test(model, test_loader, device, epoch)
+        train_loss, train_iou = train(model, train_loader, optimizer, device, epoch)
+        val_loss, val_iou, total_type_correct = test(model, test_loader, device, epoch)
 
         writer.add_scalar('Training Loss', train_loss, epoch)
         writer.add_scalar('Validation Loss', val_loss, epoch)
+        writer.add_scalar('Training IoU', train_iou, epoch)
+        writer.add_scalar('Validation IoU', val_iou, epoch)
         writer.add_scalar('Validation Accuracy', total_type_correct, epoch)
 
 
